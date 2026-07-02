@@ -1,0 +1,157 @@
+# Composite GitHub Action: smoke-test a freshly built OpenWrt image on real
+# vEdge 1000 hardware and produce a boot log as proof of a good boot.
+#
+# Add this as a FINAL step of the SONIX-network/openwrt weekly build, after the
+# image is built, to gate the release on a successful boot. Example:
+#
+#   - name: Smoke test on real hardware
+#     id: smoke
+#     uses: sonix-network/unwedge@v1
+#     with:
+#       image: bin/targets/octeon/generic/*-cisco_vedge1000-initramfs-kernel.bin
+#       boot-log: vedge1000-boot.log
+#       addr:   ${{ secrets.UNWEDGE_ADDR }}
+#       ca:     ${{ secrets.UNWEDGE_CA }}
+#       cert:   ${{ secrets.UNWEDGE_CLIENT_CERT }}
+#       key:    ${{ secrets.UNWEDGE_CLIENT_KEY }}
+#
+# The step fails (failing the job and blocking the release) if the board does not
+# reach a healthy userspace. The boot log is always written and exported as an
+# output + artifact for attaching to the release.
+
+name: vEdge 1000 smoke test
+description: Netboot a built OpenWrt image on a real vEdge 1000 and capture the boot log
+
+inputs:
+  image:
+    description: Path or glob to the initramfs-kernel.bin to boot
+    required: true
+  boot-log:
+    description: Where to write the captured boot log
+    required: false
+    default: vedge1000-boot.log
+  addr:
+    description: unwedged address (host:port)
+    required: true
+  ca:
+    description: PEM of the CA that signed the server certificate
+    required: false
+  cert:
+    description: PEM of the client certificate (for mutual TLS)
+    required: false
+  key:
+    description: PEM of the client private key (for mutual TLS)
+    required: false
+  server-name:
+    description: Override the TLS server name (SNI)
+    required: false
+    default: ""
+  insecure:
+    description: Skip server certificate verification (NOT recommended)
+    required: false
+    default: "false"
+  kernel-args:
+    description: Extra kernel command-line arguments
+    required: false
+    default: ""
+  verify-crc32:
+    description: Verify the image CRC32 in U-Boot before booting
+    required: false
+    default: "true"
+  boot-timeout:
+    description: How long to wait for a healthy boot (Go duration, e.g. 5m)
+    required: false
+    default: "5m"
+
+outputs:
+  boot-log:
+    description: Path to the captured boot log
+    value: ${{ inputs.boot-log }}
+  result:
+    description: PASS or FAIL
+    value: ${{ steps.run.outputs.result }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: ${{ github.action_path }}/go.mod
+        cache-dependency-path: ${{ github.action_path }}/go.sum
+
+    - name: Build unwedge
+      shell: bash
+      run: |
+        set -euo pipefail
+        go build -o "${RUNNER_TEMP}/unwedge" "${GITHUB_ACTION_PATH}/cmd/unwedge"
+
+    - name: Resolve image path
+      id: img
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Expand a possible glob to a single concrete file.
+        shopt -s nullglob
+        matches=( ${{ inputs.image }} )
+        if [ ${#matches[@]} -eq 0 ]; then
+          echo "::error::no image matched '${{ inputs.image }}'"; exit 1
+        fi
+        if [ ${#matches[@]} -gt 1 ]; then
+          echo "::error::image glob matched multiple files: ${matches[*]}"; exit 1
+        fi
+        echo "path=${matches[0]}" >> "$GITHUB_OUTPUT"
+        echo "Using image: ${matches[0]}"
+
+    - name: Write TLS material
+      id: tls
+      shell: bash
+      env:
+        CA: ${{ inputs.ca }}
+        CERT: ${{ inputs.cert }}
+        KEY: ${{ inputs.key }}
+      run: |
+        set -euo pipefail
+        args=()
+        if [ -n "${CA}" ]; then printf '%s' "${CA}" > "${RUNNER_TEMP}/ca.pem"; args+=(-ca "${RUNNER_TEMP}/ca.pem"); fi
+        if [ -n "${CERT}" ]; then printf '%s' "${CERT}" > "${RUNNER_TEMP}/client.crt"; args+=(-cert "${RUNNER_TEMP}/client.crt"); fi
+        if [ -n "${KEY}" ]; then printf '%s' "${KEY}" > "${RUNNER_TEMP}/client.key"; chmod 600 "${RUNNER_TEMP}/client.key"; args+=(-key "${RUNNER_TEMP}/client.key"); fi
+        if [ -n "${{ inputs.server-name }}" ]; then args+=(-server-name "${{ inputs.server-name }}"); fi
+        if [ "${{ inputs.insecure }}" = "true" ]; then args+=(-insecure); fi
+        # Persist the connection args for the run step.
+        printf '%s\n' "${args[@]}" > "${RUNNER_TEMP}/conn-args"
+
+    - name: Run smoke test
+      id: run
+      shell: bash
+      env:
+        UNWEDGE_ADDR: ${{ inputs.addr }}
+      run: |
+        set -uo pipefail
+        mapfile -t CONN < "${RUNNER_TEMP}/conn-args" || true
+        # Filter out empty lines that mapfile may introduce.
+        conn=()
+        for a in "${CONN[@]:-}"; do [ -n "$a" ] && conn+=("$a"); done
+        set +e
+        "${RUNNER_TEMP}/unwedge" "${conn[@]}" \
+          -timeout "${{ inputs.boot-timeout }}" \
+          -verify="${{ inputs.verify-crc32 }}" \
+          -kernel-args "${{ inputs.kernel-args }}" \
+          -out "${{ inputs.boot-log }}" \
+          smoke "${{ steps.img.outputs.path }}"
+        rc=$?
+        set -e
+        if [ $rc -eq 0 ]; then
+          echo "result=PASS" >> "$GITHUB_OUTPUT"
+        else
+          echo "result=FAIL" >> "$GITHUB_OUTPUT"
+        fi
+        exit $rc
+
+    - name: Upload boot log artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: vedge1000-boot-log
+        path: ${{ inputs.boot-log }}
+        if-no-files-found: warn

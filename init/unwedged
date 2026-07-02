@@ -1,0 +1,27 @@
+#!/bin/sh /etc/rc.common
+# procd init script for unwedged on an OpenWrt controller (the vEdge 1000 that
+# drives the device-under-test). Install to /etc/init.d/unwedged, then:
+#   /etc/init.d/unwedged enable
+#   /etc/init.d/unwedged start
+
+START=95
+STOP=10
+USE_PROCD=1
+
+PROG=/usr/bin/unwedged
+CONF=/etc/unwedge/config.yaml
+
+start_service() {
+	procd_open_instance
+	procd_set_param command "$PROG" -config "$CONF"
+	procd_set_param respawn
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	# The TFTP server binds UDP/69; grant the capability instead of running as root.
+	procd_set_param capabilities net_bind_service
+	procd_close_instance
+}
+
+reload_service() {
+	restart
+}

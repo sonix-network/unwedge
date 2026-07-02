@@ -1,0 +1,281 @@
+syntax = "proto3";
+
+// Package unwedge.v1 defines the remote control API for driving kernel/OS
+// development on a Cisco vEdge 1000 (Octeon CN6130, MIPS64 big-endian) from an
+// AI agent. The service runs on a controller that owns the target's serial
+// console (FTDI USB UART), power (via an APC switched rack PDU over SNMP), a
+// TFTP server for netbooting kernels, and SSH access to the running target.
+package unwedge.v1;
+
+option go_package = "github.com/sonix-network/unwedge/gen/unwedge/v1;unwedgev1";
+
+// WrtRemote is the full control surface for one target device.
+service Unwedge {
+  // ---- Introspection -------------------------------------------------------
+
+  // GetStatus reports the health and configuration of the controller and its
+  // view of the target (serial connected, last power state, etc.).
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+
+  // ---- Serial console ------------------------------------------------------
+
+  // StreamConsole streams console output as it arrives. If replay_bytes > 0 the
+  // server first sends up to that many bytes of buffered scrollback so a newly
+  // attached agent has recent context.
+  rpc StreamConsole(StreamConsoleRequest) returns (stream ConsoleChunk);
+
+  // ReadConsoleLog returns a snapshot of the console ring buffer without
+  // streaming. Useful for one-shot "what happened" queries.
+  rpc ReadConsoleLog(ReadConsoleLogRequest) returns (ReadConsoleLogResponse);
+
+  // WriteConsole sends raw bytes (and/or named control keys) to the console.
+  rpc WriteConsole(WriteConsoleRequest) returns (WriteConsoleResponse);
+
+  // WaitForPattern blocks until a regular expression matches newly received
+  // console output, or the deadline elapses. Matching starts from the moment
+  // the call is received (plus optional scrollback), so callers can arm the
+  // wait and then trigger the action that produces the expected output.
+  rpc WaitForPattern(WaitForPatternRequest) returns (WaitForPatternResponse);
+
+  // ---- Power (APC PDU over SNMP) -------------------------------------------
+
+  // PowerControl turns the target's outlet on, off, or power-cycles it, or
+  // queries the current outlet state.
+  rpc PowerControl(PowerControlRequest) returns (PowerControlResponse);
+
+  // ---- Boot orchestration --------------------------------------------------
+
+  // InterruptBoot power-cycles the target, watches the console for the U-Boot
+  // "Hit ctrl-x to stop booting" prompt, sends the interrupt key, and confirms
+  // it reached the U-Boot prompt. Streams progress events.
+  rpc InterruptBoot(InterruptBootRequest) returns (stream BootEvent);
+
+  // Netboot performs the full "develop a kernel over the network" flow: reach
+  // the U-Boot prompt (optionally power-cycling first), configure the mgmt
+  // interface via DHCP, TFTP the named image from this controller, optionally
+  // verify its CRC32, and bootoctlinux it. Streams progress events.
+  rpc Netboot(NetbootRequest) returns (stream BootEvent);
+
+  // RunUbootCommand runs a single command at the U-Boot prompt and returns the
+  // text captured until the prompt returns. Assumes U-Boot is already at its
+  // prompt (e.g. after InterruptBoot).
+  rpc RunUbootCommand(RunUbootCommandRequest) returns (RunUbootCommandResponse);
+
+  // ---- Image (TFTP) management ---------------------------------------------
+
+  // UploadImage streams a kernel/rootfs image into the controller's TFTP
+  // directory so it can be served during Netboot. The first message must carry
+  // metadata; subsequent messages carry chunk bytes.
+  rpc UploadImage(stream UploadImageRequest) returns (UploadImageResponse);
+
+  // ListImages lists images currently available in the TFTP directory.
+  rpc ListImages(ListImagesRequest) returns (ListImagesResponse);
+
+  // DeleteImage removes an image from the TFTP directory.
+  rpc DeleteImage(DeleteImageRequest) returns (DeleteImageResponse);
+
+  // ---- SSH to the running target -------------------------------------------
+
+  // SSHExec runs a command on the booted target over SSH and returns its
+  // output and exit status.
+  rpc SSHExec(SSHExecRequest) returns (SSHExecResponse);
+}
+
+// ---- Introspection ---------------------------------------------------------
+
+message GetStatusRequest {}
+
+message GetStatusResponse {
+  string version = 1;             // controller build version
+  bool serial_connected = 2;      // serial device currently open
+  string serial_device = 3;       // e.g. /dev/serial/by-id/...
+  uint32 serial_baud = 4;
+  PowerState power_state = 5;      // last known outlet state (may be UNKNOWN)
+  string tftp_dir = 6;
+  string tftp_address = 7;         // host:port the TFTP server listens on
+  int64 console_buffer_bytes = 8;  // bytes currently buffered in scrollback
+}
+
+// ---- Serial console --------------------------------------------------------
+
+message StreamConsoleRequest {
+  // If > 0, replay up to this many bytes of buffered scrollback before live data.
+  uint32 replay_bytes = 1;
+}
+
+message ConsoleChunk {
+  bytes data = 1;
+  int64 offset = 2;  // monotonically increasing byte offset within the session
+}
+
+message ReadConsoleLogRequest {
+  // If > 0, return only the last N bytes of the buffer.
+  uint32 max_bytes = 1;
+}
+
+message ReadConsoleLogResponse {
+  bytes data = 1;
+  bool truncated = 2;  // true if older data was dropped from the ring buffer
+}
+
+message WriteConsoleRequest {
+  // Raw bytes to send verbatim (e.g. "printenv\n").
+  bytes data = 1;
+  // Named control keys sent after data, in order. Recognized: "ctrl-x",
+  // "ctrl-c", "enter", "esc", "space", "ctrl-a".."ctrl-z". Convenience for
+  // callers that cannot easily embed control bytes.
+  repeated string keys = 2;
+}
+
+message WriteConsoleResponse {
+  int64 bytes_written = 1;
+}
+
+message WaitForPatternRequest {
+  // RE2 regular expression matched against console output.
+  string pattern = 1;
+  // Maximum time to wait before returning matched=false.
+  int64 timeout_ms = 2;
+  // If > 0, also consider this many bytes of existing scrollback when matching.
+  uint32 include_scrollback_bytes = 3;
+}
+
+message WaitForPatternResponse {
+  bool matched = 1;
+  string match = 2;          // the exact matched text
+  bytes context = 3;         // surrounding output captured while waiting
+  int64 elapsed_ms = 4;
+}
+
+// ---- Power -----------------------------------------------------------------
+
+enum PowerState {
+  POWER_STATE_UNKNOWN = 0;
+  POWER_STATE_ON = 1;
+  POWER_STATE_OFF = 2;
+}
+
+enum PowerAction {
+  POWER_ACTION_UNSPECIFIED = 0;
+  POWER_ACTION_ON = 1;
+  POWER_ACTION_OFF = 2;
+  POWER_ACTION_CYCLE = 3;   // off, wait, on (or PDU immediate-reboot)
+  POWER_ACTION_STATUS = 4;  // query only, no change
+}
+
+message PowerControlRequest {
+  PowerAction action = 1;
+  // For CYCLE performed as off+on, how long to stay off. 0 uses server default.
+  int64 off_duration_ms = 2;
+}
+
+message PowerControlResponse {
+  PowerState state = 1;  // resulting (or queried) state
+  string detail = 2;
+}
+
+// ---- Boot orchestration ----------------------------------------------------
+
+// BootEvent is a progress update streamed during InterruptBoot/Netboot.
+message BootEvent {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_INFO = 1;       // human-readable progress
+    KIND_CONSOLE = 2;    // raw console output captured during the operation
+    KIND_STAGE = 3;      // a named stage boundary (see stage)
+    KIND_SUCCESS = 4;    // terminal: operation succeeded
+    KIND_ERROR = 5;      // terminal: operation failed
+  }
+  Kind kind = 1;
+  string stage = 2;    // e.g. "power_cycle", "await_prompt", "tftp", "boot"
+  string message = 3;
+  bytes console = 4;   // populated for KIND_CONSOLE
+}
+
+message InterruptBootRequest {
+  // Power-cycle the target before watching for the interrupt prompt. If false,
+  // the caller is expected to reset the target another way (e.g. it is already
+  // rebooting); the server just watches and interrupts.
+  bool power_cycle = 1;
+  // Overall timeout for reaching the U-Boot prompt.
+  int64 timeout_ms = 2;
+}
+
+message NetbootRequest {
+  // Name of an image previously uploaded / present in the TFTP directory.
+  string image = 1;
+  // Power-cycle and interrupt boot first. If false, assumes already at prompt.
+  bool power_cycle = 2;
+  // Extra kernel arguments appended to the bootoctlinux command line.
+  string kernel_args = 3;
+  // Verify the CRC32 of the loaded image in U-Boot before booting.
+  bool verify_crc32 = 4;
+  // Overall timeout for the whole operation.
+  int64 timeout_ms = 5;
+}
+
+message RunUbootCommandRequest {
+  string command = 1;
+  int64 timeout_ms = 2;
+}
+
+message RunUbootCommandResponse {
+  string output = 1;
+  bool prompt_returned = 2;  // false if we timed out before the prompt came back
+}
+
+// ---- Images ----------------------------------------------------------------
+
+message UploadImageRequest {
+  message Metadata {
+    string name = 1;         // filename to store as (basename only)
+    int64 size = 2;          // total bytes, optional (for progress)
+    bool overwrite = 3;      // replace if it already exists
+  }
+  oneof payload {
+    Metadata metadata = 1;   // must be the first message
+    bytes chunk = 2;         // subsequent messages
+  }
+}
+
+message UploadImageResponse {
+  string name = 1;
+  int64 size = 2;
+  string sha256 = 3;         // hex digest of stored file
+  uint32 crc32 = 4;          // IEEE CRC32 (matches U-Boot's crc32 command)
+}
+
+message ListImagesRequest {}
+
+message ImageInfo {
+  string name = 1;
+  int64 size = 2;
+  int64 mod_time_unix = 3;
+  uint32 crc32 = 4;
+}
+
+message ListImagesResponse {
+  repeated ImageInfo images = 1;
+}
+
+message DeleteImageRequest {
+  string name = 1;
+}
+
+message DeleteImageResponse {}
+
+// ---- SSH -------------------------------------------------------------------
+
+message SSHExecRequest {
+  string command = 1;
+  int64 timeout_ms = 2;
+  // Optional override of the configured target host (host or host:port).
+  string host_override = 3;
+}
+
+message SSHExecResponse {
+  int32 exit_code = 1;
+  bytes stdout = 2;
+  bytes stderr = 3;
+  bool timed_out = 4;
+}

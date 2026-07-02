@@ -1,0 +1,58 @@
+# unwedged configuration for a Cisco vEdge 1000 development target.
+# Copy to /etc/unwedge/config.yaml and adjust. All durations accept Go syntax
+# (e.g. "5s", "500ms", "2m").
+
+serial:
+  # FTDI USB-serial adapter wired to the vEdge 1000 console (RJ45 / TTL / USB-B).
+  device: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_ST163104-if00-port0
+  baud: 115200
+  buffer_bytes: 1048576   # 1 MiB console scrollback
+
+power:
+  # APC switched rack PDU controlling the target's outlet, over SNMP.
+  address: 10.0.0.2       # PDU host[:port]; leave empty to disable power control
+  community: private      # SNMP write community (needed to switch outlets)
+  outlet: 3               # the vEdge 1000 is on outlet 3
+  version: v1             # v1 (default) or v2c
+  off_duration: 5s        # how long "cycle" keeps the outlet off
+  timeout: 3s
+  retries: 1
+  # command_oid_base/state_oid_base override APC defaults for non-APC PDUs.
+
+uboot:
+  # IP of THIS controller as reachable from the target's mgmt0 network; used as
+  # the U-Boot TFTP serverip. Required for netboot.
+  server_ip: 10.1.2.3
+  ethact: octmgmt0        # U-Boot netdev for the mgmt port
+  load_addr: "0x20000000" # OCTEON default load address
+  coremask: f             # all 4 CN6130 cores
+  command_timeout: 30s
+  # Advanced overrides (defaults match stock vEdge 1000 U-Boot):
+  # prompt_pattern: '=> ?$'
+  # interrupt_pattern: 'Hit ctrl-x to stop booting'
+  # interrupt_key: ctrl-x
+  # kernel_banner: '(Linux version|Loading big-endian Linux kernel|Starting cores)'
+
+tftp:
+  enabled: true
+  dir: /var/lib/unwedge/images
+  address: ":69"          # UDP; port 69 needs privileges or CAP_NET_BIND_SERVICE
+
+ssh:
+  # SSH into the booted target (OpenWrt). Leave host empty to disable.
+  host: 10.1.2.34
+  user: root
+  password: ""            # or use private_key_path
+  private_key_path: ""
+  # known_hosts_path: ""  # empty accepts any host key (target key changes each netboot)
+  dial_timeout: 10s
+
+grpc:
+  address: ":7777"
+  tls:
+    enabled: true         # STRONGLY recommended; this port may be internet-facing
+    cert_file: /etc/unwedge/server.crt
+    key_file: /etc/unwedge/server.key
+    # Set client_ca_file to require client certificates (mutual TLS). Recommended
+    # when exposed to the internet.
+    client_ca_file: /etc/unwedge/client-ca.crt

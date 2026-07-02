@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Vet
+        run: go vet ./...
+      - name: Test (race)
+        run: go test -race ./...
+      - name: Verify gofmt
+        run: |
+          out="$(gofmt -l $(git ls-files '*.go' | grep -v '^gen/'))"
+          if [ -n "$out" ]; then echo "gofmt needed on:"; echo "$out"; exit 1; fi
+
+  cross-compile:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Build release matrix (incl. mips64 big-endian controller)
+        run: make release
+      - name: Confirm daemon is big-endian MIPS64
+        run: |
+          file bin/unwedged.mips64
+          file bin/unwedged.mips64 | grep -q 'MSB.*MIPS' || { echo 'not big-endian MIPS'; exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: bin/

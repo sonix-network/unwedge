@@ -1,0 +1,16 @@
+# Build output
+/bin/
+/dist/
+*.test
+*.out
+
+# Local config & secrets — never commit real certs/keys/passwords
+/config.yaml
+/config.local.yaml
+*.pem
+*.key
+*.crt
+!testdata/**/*.pem
+
+# Scratch
+/openwrt-sonix/
