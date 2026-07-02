@@ -26,10 +26,18 @@ be driven safely over the internet.
 | `unwedge-mcp` | the agent's machine       | MCP (Model Context Protocol) server bridging tools → gRPC |
 
 ```
-   AI agent ──MCP(stdio)──▶ unwedge-mcp ──gRPC/TLS──▶ unwedged ──▶ vEdge 1000 (DUT)
-                                                          ├─ serial (FTDI)
-   CI / human ──────────────── unwedge ──gRPC/TLS──▶│─ APC PDU (SNMP) power
-                                                          └─ TFTP netboot
+  AI agent   ──▶ unwedge-mcp ──┐
+                               │  gRPC / TLS
+  CI / human ──▶ unwedge CLI ──┴──▶ unwedged  (the controller, a vEdge 1000)
+                                       │
+                                       │ owns the target and drives it via:
+                                       ├─ serial console   (FTDI USB-UART @ 115200)
+                                       ├─ power            (APC PDU over SNMP, outlet 3)
+                                       ├─ U-Boot + TFTP    (interrupt & netboot kernels)
+                                       └─ SSH              (shell on the booted target)
+                                       │
+                                       ▼
+                                 vEdge 1000  (DUT)
 ```
 
 ## Build
