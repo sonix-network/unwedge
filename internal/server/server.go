@@ -17,6 +17,7 @@ import (
 	unwedgev1 "github.com/sonix-network/unwedge/gen/unwedge/v1"
 	"github.com/sonix-network/unwedge/internal/power"
 	"github.com/sonix-network/unwedge/internal/serialconsole"
+	"github.com/sonix-network/unwedge/internal/session"
 	"github.com/sonix-network/unwedge/internal/sshexec"
 	"github.com/sonix-network/unwedge/internal/tftp"
 	"github.com/sonix-network/unwedge/internal/uboot"
@@ -32,6 +33,7 @@ type Deps struct {
 	Orchestrator *uboot.Orchestrator
 	Store        *tftp.Store
 	SSH          *sshexec.Client
+	Sessions     *session.Manager // nil disables session locking
 	Logger       *slog.Logger
 
 	// Descriptive fields surfaced by GetStatus.
@@ -82,6 +84,15 @@ func (s *Service) GetStatus(ctx context.Context, _ *unwedgev1.GetStatusRequest) 
 	if s.deps.Power != nil {
 		if st, err := s.deps.Power.Status(ctx); err == nil {
 			resp.PowerState = powerStateToProto(st)
+		}
+	}
+	if s.deps.Sessions != nil {
+		si := s.deps.Sessions.Info()
+		resp.SessionActive = si.Active
+		resp.SessionOwner = si.Owner
+		if si.Active {
+			resp.SessionStartedAtUnixMs = si.StartedAt.UnixMilli()
+			resp.SessionExpiresAtUnixMs = si.ExpiresAt.UnixMilli()
 		}
 	}
 	return resp, nil

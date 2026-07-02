@@ -186,7 +186,7 @@ func (x BootEvent_Kind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use BootEvent_Kind.Descriptor instead.
 func (BootEvent_Kind) EnumDescriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{12, 0}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{18, 0}
 }
 
 type GetStatusRequest struct {
@@ -235,8 +235,13 @@ type GetStatusResponse struct {
 	TftpDir            string                 `protobuf:"bytes,6,opt,name=tftp_dir,json=tftpDir,proto3" json:"tftp_dir,omitempty"`
 	TftpAddress        string                 `protobuf:"bytes,7,opt,name=tftp_address,json=tftpAddress,proto3" json:"tftp_address,omitempty"`                         // host:port the TFTP server listens on
 	ConsoleBufferBytes int64                  `protobuf:"varint,8,opt,name=console_buffer_bytes,json=consoleBufferBytes,proto3" json:"console_buffer_bytes,omitempty"` // bytes currently buffered in scrollback
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Session lock state, so contention is always observable.
+	SessionActive          bool   `protobuf:"varint,9,opt,name=session_active,json=sessionActive,proto3" json:"session_active,omitempty"` // true if the unit is currently locked
+	SessionOwner           string `protobuf:"bytes,10,opt,name=session_owner,json=sessionOwner,proto3" json:"session_owner,omitempty"`    // owner label supplied at StartSession
+	SessionStartedAtUnixMs int64  `protobuf:"varint,11,opt,name=session_started_at_unix_ms,json=sessionStartedAtUnixMs,proto3" json:"session_started_at_unix_ms,omitempty"`
+	SessionExpiresAtUnixMs int64  `protobuf:"varint,12,opt,name=session_expires_at_unix_ms,json=sessionExpiresAtUnixMs,proto3" json:"session_expires_at_unix_ms,omitempty"` // when the lock expires if not refreshed
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *GetStatusResponse) Reset() {
@@ -325,6 +330,318 @@ func (x *GetStatusResponse) GetConsoleBufferBytes() int64 {
 	return 0
 }
 
+func (x *GetStatusResponse) GetSessionActive() bool {
+	if x != nil {
+		return x.SessionActive
+	}
+	return false
+}
+
+func (x *GetStatusResponse) GetSessionOwner() string {
+	if x != nil {
+		return x.SessionOwner
+	}
+	return ""
+}
+
+func (x *GetStatusResponse) GetSessionStartedAtUnixMs() int64 {
+	if x != nil {
+		return x.SessionStartedAtUnixMs
+	}
+	return 0
+}
+
+func (x *GetStatusResponse) GetSessionExpiresAtUnixMs() int64 {
+	if x != nil {
+		return x.SessionExpiresAtUnixMs
+	}
+	return 0
+}
+
+type StartSessionRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Optional human-readable label for who is acquiring the lock (e.g.
+	// "github-ci", "user@host"). Shown in GetStatus.
+	Owner string `protobuf:"bytes,1,opt,name=owner,proto3" json:"owner,omitempty"`
+	// Maximum time to wait for the lock if it is held. 0 means wait until the
+	// caller's context/deadline. Negative would be non-blocking (fail fast).
+	WaitTimeoutMs int64 `protobuf:"varint,2,opt,name=wait_timeout_ms,json=waitTimeoutMs,proto3" json:"wait_timeout_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartSessionRequest) Reset() {
+	*x = StartSessionRequest{}
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartSessionRequest) ProtoMessage() {}
+
+func (x *StartSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartSessionRequest.ProtoReflect.Descriptor instead.
+func (*StartSessionRequest) Descriptor() ([]byte, []int) {
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *StartSessionRequest) GetOwner() string {
+	if x != nil {
+		return x.Owner
+	}
+	return ""
+}
+
+func (x *StartSessionRequest) GetWaitTimeoutMs() int64 {
+	if x != nil {
+		return x.WaitTimeoutMs
+	}
+	return 0
+}
+
+type StartSessionResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	SessionId       string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	ExpiresAtUnixMs int64                  `protobuf:"varint,2,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
+	TtlMs           int64                  `protobuf:"varint,3,opt,name=ttl_ms,json=ttlMs,proto3" json:"ttl_ms,omitempty"` // configured idle TTL, so clients can pace keepalive pings
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *StartSessionResponse) Reset() {
+	*x = StartSessionResponse{}
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartSessionResponse) ProtoMessage() {}
+
+func (x *StartSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartSessionResponse.ProtoReflect.Descriptor instead.
+func (*StartSessionResponse) Descriptor() ([]byte, []int) {
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *StartSessionResponse) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *StartSessionResponse) GetExpiresAtUnixMs() int64 {
+	if x != nil {
+		return x.ExpiresAtUnixMs
+	}
+	return 0
+}
+
+func (x *StartSessionResponse) GetTtlMs() int64 {
+	if x != nil {
+		return x.TtlMs
+	}
+	return 0
+}
+
+type FinishSessionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FinishSessionRequest) Reset() {
+	*x = FinishSessionRequest{}
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FinishSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FinishSessionRequest) ProtoMessage() {}
+
+func (x *FinishSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FinishSessionRequest.ProtoReflect.Descriptor instead.
+func (*FinishSessionRequest) Descriptor() ([]byte, []int) {
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *FinishSessionRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+type FinishSessionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FinishSessionResponse) Reset() {
+	*x = FinishSessionResponse{}
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FinishSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FinishSessionResponse) ProtoMessage() {}
+
+func (x *FinishSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FinishSessionResponse.ProtoReflect.Descriptor instead.
+func (*FinishSessionResponse) Descriptor() ([]byte, []int) {
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{5}
+}
+
+type PingRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PingRequest) Reset() {
+	*x = PingRequest{}
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PingRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PingRequest) ProtoMessage() {}
+
+func (x *PingRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PingRequest.ProtoReflect.Descriptor instead.
+func (*PingRequest) Descriptor() ([]byte, []int) {
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *PingRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+type PingResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ExpiresAtUnixMs int64                  `protobuf:"varint,1,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *PingResponse) Reset() {
+	*x = PingResponse{}
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PingResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PingResponse) ProtoMessage() {}
+
+func (x *PingResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PingResponse.ProtoReflect.Descriptor instead.
+func (*PingResponse) Descriptor() ([]byte, []int) {
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *PingResponse) GetExpiresAtUnixMs() int64 {
+	if x != nil {
+		return x.ExpiresAtUnixMs
+	}
+	return 0
+}
+
 type StreamConsoleRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// If > 0, replay up to this many bytes of buffered scrollback before live data.
@@ -335,7 +652,7 @@ type StreamConsoleRequest struct {
 
 func (x *StreamConsoleRequest) Reset() {
 	*x = StreamConsoleRequest{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[2]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -347,7 +664,7 @@ func (x *StreamConsoleRequest) String() string {
 func (*StreamConsoleRequest) ProtoMessage() {}
 
 func (x *StreamConsoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[2]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -360,7 +677,7 @@ func (x *StreamConsoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamConsoleRequest.ProtoReflect.Descriptor instead.
 func (*StreamConsoleRequest) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{2}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *StreamConsoleRequest) GetReplayBytes() uint32 {
@@ -380,7 +697,7 @@ type ConsoleChunk struct {
 
 func (x *ConsoleChunk) Reset() {
 	*x = ConsoleChunk{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[3]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -392,7 +709,7 @@ func (x *ConsoleChunk) String() string {
 func (*ConsoleChunk) ProtoMessage() {}
 
 func (x *ConsoleChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[3]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -405,7 +722,7 @@ func (x *ConsoleChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConsoleChunk.ProtoReflect.Descriptor instead.
 func (*ConsoleChunk) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{3}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ConsoleChunk) GetData() []byte {
@@ -432,7 +749,7 @@ type ReadConsoleLogRequest struct {
 
 func (x *ReadConsoleLogRequest) Reset() {
 	*x = ReadConsoleLogRequest{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[4]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -444,7 +761,7 @@ func (x *ReadConsoleLogRequest) String() string {
 func (*ReadConsoleLogRequest) ProtoMessage() {}
 
 func (x *ReadConsoleLogRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[4]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -457,7 +774,7 @@ func (x *ReadConsoleLogRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadConsoleLogRequest.ProtoReflect.Descriptor instead.
 func (*ReadConsoleLogRequest) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{4}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ReadConsoleLogRequest) GetMaxBytes() uint32 {
@@ -477,7 +794,7 @@ type ReadConsoleLogResponse struct {
 
 func (x *ReadConsoleLogResponse) Reset() {
 	*x = ReadConsoleLogResponse{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[5]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -489,7 +806,7 @@ func (x *ReadConsoleLogResponse) String() string {
 func (*ReadConsoleLogResponse) ProtoMessage() {}
 
 func (x *ReadConsoleLogResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[5]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -502,7 +819,7 @@ func (x *ReadConsoleLogResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadConsoleLogResponse.ProtoReflect.Descriptor instead.
 func (*ReadConsoleLogResponse) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{5}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ReadConsoleLogResponse) GetData() []byte {
@@ -533,7 +850,7 @@ type WriteConsoleRequest struct {
 
 func (x *WriteConsoleRequest) Reset() {
 	*x = WriteConsoleRequest{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[6]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -545,7 +862,7 @@ func (x *WriteConsoleRequest) String() string {
 func (*WriteConsoleRequest) ProtoMessage() {}
 
 func (x *WriteConsoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[6]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -558,7 +875,7 @@ func (x *WriteConsoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteConsoleRequest.ProtoReflect.Descriptor instead.
 func (*WriteConsoleRequest) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{6}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *WriteConsoleRequest) GetData() []byte {
@@ -584,7 +901,7 @@ type WriteConsoleResponse struct {
 
 func (x *WriteConsoleResponse) Reset() {
 	*x = WriteConsoleResponse{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[7]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -596,7 +913,7 @@ func (x *WriteConsoleResponse) String() string {
 func (*WriteConsoleResponse) ProtoMessage() {}
 
 func (x *WriteConsoleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[7]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -609,7 +926,7 @@ func (x *WriteConsoleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteConsoleResponse.ProtoReflect.Descriptor instead.
 func (*WriteConsoleResponse) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{7}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *WriteConsoleResponse) GetBytesWritten() int64 {
@@ -633,7 +950,7 @@ type WaitForPatternRequest struct {
 
 func (x *WaitForPatternRequest) Reset() {
 	*x = WaitForPatternRequest{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[8]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -645,7 +962,7 @@ func (x *WaitForPatternRequest) String() string {
 func (*WaitForPatternRequest) ProtoMessage() {}
 
 func (x *WaitForPatternRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[8]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -658,7 +975,7 @@ func (x *WaitForPatternRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitForPatternRequest.ProtoReflect.Descriptor instead.
 func (*WaitForPatternRequest) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{8}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *WaitForPatternRequest) GetPattern() string {
@@ -694,7 +1011,7 @@ type WaitForPatternResponse struct {
 
 func (x *WaitForPatternResponse) Reset() {
 	*x = WaitForPatternResponse{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[9]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -706,7 +1023,7 @@ func (x *WaitForPatternResponse) String() string {
 func (*WaitForPatternResponse) ProtoMessage() {}
 
 func (x *WaitForPatternResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[9]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -719,7 +1036,7 @@ func (x *WaitForPatternResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitForPatternResponse.ProtoReflect.Descriptor instead.
 func (*WaitForPatternResponse) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{9}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *WaitForPatternResponse) GetMatched() bool {
@@ -761,7 +1078,7 @@ type PowerControlRequest struct {
 
 func (x *PowerControlRequest) Reset() {
 	*x = PowerControlRequest{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[10]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -773,7 +1090,7 @@ func (x *PowerControlRequest) String() string {
 func (*PowerControlRequest) ProtoMessage() {}
 
 func (x *PowerControlRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[10]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -786,7 +1103,7 @@ func (x *PowerControlRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PowerControlRequest.ProtoReflect.Descriptor instead.
 func (*PowerControlRequest) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{10}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *PowerControlRequest) GetAction() PowerAction {
@@ -813,7 +1130,7 @@ type PowerControlResponse struct {
 
 func (x *PowerControlResponse) Reset() {
 	*x = PowerControlResponse{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[11]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -825,7 +1142,7 @@ func (x *PowerControlResponse) String() string {
 func (*PowerControlResponse) ProtoMessage() {}
 
 func (x *PowerControlResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[11]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -838,7 +1155,7 @@ func (x *PowerControlResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PowerControlResponse.ProtoReflect.Descriptor instead.
 func (*PowerControlResponse) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{11}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *PowerControlResponse) GetState() PowerState {
@@ -868,7 +1185,7 @@ type BootEvent struct {
 
 func (x *BootEvent) Reset() {
 	*x = BootEvent{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[12]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -880,7 +1197,7 @@ func (x *BootEvent) String() string {
 func (*BootEvent) ProtoMessage() {}
 
 func (x *BootEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[12]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -893,7 +1210,7 @@ func (x *BootEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BootEvent.ProtoReflect.Descriptor instead.
 func (*BootEvent) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{12}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *BootEvent) GetKind() BootEvent_Kind {
@@ -938,7 +1255,7 @@ type InterruptBootRequest struct {
 
 func (x *InterruptBootRequest) Reset() {
 	*x = InterruptBootRequest{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[13]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -950,7 +1267,7 @@ func (x *InterruptBootRequest) String() string {
 func (*InterruptBootRequest) ProtoMessage() {}
 
 func (x *InterruptBootRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[13]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -963,7 +1280,7 @@ func (x *InterruptBootRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InterruptBootRequest.ProtoReflect.Descriptor instead.
 func (*InterruptBootRequest) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{13}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *InterruptBootRequest) GetPowerCycle() bool {
@@ -998,7 +1315,7 @@ type NetbootRequest struct {
 
 func (x *NetbootRequest) Reset() {
 	*x = NetbootRequest{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[14]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1010,7 +1327,7 @@ func (x *NetbootRequest) String() string {
 func (*NetbootRequest) ProtoMessage() {}
 
 func (x *NetbootRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[14]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1023,7 +1340,7 @@ func (x *NetbootRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetbootRequest.ProtoReflect.Descriptor instead.
 func (*NetbootRequest) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{14}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *NetbootRequest) GetImage() string {
@@ -1071,7 +1388,7 @@ type RunUbootCommandRequest struct {
 
 func (x *RunUbootCommandRequest) Reset() {
 	*x = RunUbootCommandRequest{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[15]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1083,7 +1400,7 @@ func (x *RunUbootCommandRequest) String() string {
 func (*RunUbootCommandRequest) ProtoMessage() {}
 
 func (x *RunUbootCommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[15]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1096,7 +1413,7 @@ func (x *RunUbootCommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunUbootCommandRequest.ProtoReflect.Descriptor instead.
 func (*RunUbootCommandRequest) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{15}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *RunUbootCommandRequest) GetCommand() string {
@@ -1123,7 +1440,7 @@ type RunUbootCommandResponse struct {
 
 func (x *RunUbootCommandResponse) Reset() {
 	*x = RunUbootCommandResponse{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[16]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1135,7 +1452,7 @@ func (x *RunUbootCommandResponse) String() string {
 func (*RunUbootCommandResponse) ProtoMessage() {}
 
 func (x *RunUbootCommandResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[16]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1148,7 +1465,7 @@ func (x *RunUbootCommandResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunUbootCommandResponse.ProtoReflect.Descriptor instead.
 func (*RunUbootCommandResponse) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{16}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *RunUbootCommandResponse) GetOutput() string {
@@ -1178,7 +1495,7 @@ type UploadImageRequest struct {
 
 func (x *UploadImageRequest) Reset() {
 	*x = UploadImageRequest{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[17]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1190,7 +1507,7 @@ func (x *UploadImageRequest) String() string {
 func (*UploadImageRequest) ProtoMessage() {}
 
 func (x *UploadImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[17]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1203,7 +1520,7 @@ func (x *UploadImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadImageRequest.ProtoReflect.Descriptor instead.
 func (*UploadImageRequest) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{17}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *UploadImageRequest) GetPayload() isUploadImageRequest_Payload {
@@ -1259,7 +1576,7 @@ type UploadImageResponse struct {
 
 func (x *UploadImageResponse) Reset() {
 	*x = UploadImageResponse{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[18]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1271,7 +1588,7 @@ func (x *UploadImageResponse) String() string {
 func (*UploadImageResponse) ProtoMessage() {}
 
 func (x *UploadImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[18]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1284,7 +1601,7 @@ func (x *UploadImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadImageResponse.ProtoReflect.Descriptor instead.
 func (*UploadImageResponse) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{18}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *UploadImageResponse) GetName() string {
@@ -1323,7 +1640,7 @@ type ListImagesRequest struct {
 
 func (x *ListImagesRequest) Reset() {
 	*x = ListImagesRequest{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[19]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1335,7 +1652,7 @@ func (x *ListImagesRequest) String() string {
 func (*ListImagesRequest) ProtoMessage() {}
 
 func (x *ListImagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[19]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1348,7 +1665,7 @@ func (x *ListImagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListImagesRequest.ProtoReflect.Descriptor instead.
 func (*ListImagesRequest) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{19}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{25}
 }
 
 type ImageInfo struct {
@@ -1363,7 +1680,7 @@ type ImageInfo struct {
 
 func (x *ImageInfo) Reset() {
 	*x = ImageInfo{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[20]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1375,7 +1692,7 @@ func (x *ImageInfo) String() string {
 func (*ImageInfo) ProtoMessage() {}
 
 func (x *ImageInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[20]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1388,7 +1705,7 @@ func (x *ImageInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImageInfo.ProtoReflect.Descriptor instead.
 func (*ImageInfo) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{20}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ImageInfo) GetName() string {
@@ -1428,7 +1745,7 @@ type ListImagesResponse struct {
 
 func (x *ListImagesResponse) Reset() {
 	*x = ListImagesResponse{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[21]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1440,7 +1757,7 @@ func (x *ListImagesResponse) String() string {
 func (*ListImagesResponse) ProtoMessage() {}
 
 func (x *ListImagesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[21]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1453,7 +1770,7 @@ func (x *ListImagesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListImagesResponse.ProtoReflect.Descriptor instead.
 func (*ListImagesResponse) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{21}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ListImagesResponse) GetImages() []*ImageInfo {
@@ -1472,7 +1789,7 @@ type DeleteImageRequest struct {
 
 func (x *DeleteImageRequest) Reset() {
 	*x = DeleteImageRequest{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[22]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1484,7 +1801,7 @@ func (x *DeleteImageRequest) String() string {
 func (*DeleteImageRequest) ProtoMessage() {}
 
 func (x *DeleteImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[22]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1497,7 +1814,7 @@ func (x *DeleteImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteImageRequest.ProtoReflect.Descriptor instead.
 func (*DeleteImageRequest) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{22}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *DeleteImageRequest) GetName() string {
@@ -1515,7 +1832,7 @@ type DeleteImageResponse struct {
 
 func (x *DeleteImageResponse) Reset() {
 	*x = DeleteImageResponse{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[23]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1527,7 +1844,7 @@ func (x *DeleteImageResponse) String() string {
 func (*DeleteImageResponse) ProtoMessage() {}
 
 func (x *DeleteImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[23]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1540,7 +1857,7 @@ func (x *DeleteImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteImageResponse.ProtoReflect.Descriptor instead.
 func (*DeleteImageResponse) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{23}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{29}
 }
 
 type SSHExecRequest struct {
@@ -1555,7 +1872,7 @@ type SSHExecRequest struct {
 
 func (x *SSHExecRequest) Reset() {
 	*x = SSHExecRequest{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[24]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1567,7 +1884,7 @@ func (x *SSHExecRequest) String() string {
 func (*SSHExecRequest) ProtoMessage() {}
 
 func (x *SSHExecRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[24]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1580,7 +1897,7 @@ func (x *SSHExecRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSHExecRequest.ProtoReflect.Descriptor instead.
 func (*SSHExecRequest) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{24}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *SSHExecRequest) GetCommand() string {
@@ -1616,7 +1933,7 @@ type SSHExecResponse struct {
 
 func (x *SSHExecResponse) Reset() {
 	*x = SSHExecResponse{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[25]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1628,7 +1945,7 @@ func (x *SSHExecResponse) String() string {
 func (*SSHExecResponse) ProtoMessage() {}
 
 func (x *SSHExecResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[25]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1641,7 +1958,7 @@ func (x *SSHExecResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSHExecResponse.ProtoReflect.Descriptor instead.
 func (*SSHExecResponse) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{25}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *SSHExecResponse) GetExitCode() int32 {
@@ -1683,7 +2000,7 @@ type UploadImageRequest_Metadata struct {
 
 func (x *UploadImageRequest_Metadata) Reset() {
 	*x = UploadImageRequest_Metadata{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[26]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1695,7 +2012,7 @@ func (x *UploadImageRequest_Metadata) String() string {
 func (*UploadImageRequest_Metadata) ProtoMessage() {}
 
 func (x *UploadImageRequest_Metadata) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[26]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1708,7 +2025,7 @@ func (x *UploadImageRequest_Metadata) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadImageRequest_Metadata.ProtoReflect.Descriptor instead.
 func (*UploadImageRequest_Metadata) Descriptor() ([]byte, []int) {
-	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{17, 0}
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{23, 0}
 }
 
 func (x *UploadImageRequest_Metadata) GetName() string {
@@ -1738,7 +2055,7 @@ const file_unwedge_v1_unwedge_proto_rawDesc = "" +
 	"\n" +
 	"\x18unwedge/v1/unwedge.proto\x12\n" +
 	"unwedge.v1\"\x12\n" +
-	"\x10GetStatusRequest\"\xc7\x02\n" +
+	"\x10GetStatusRequest\"\x8b\x04\n" +
 	"\x11GetStatusResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12)\n" +
 	"\x10serial_connected\x18\x02 \x01(\bR\x0fserialConnected\x12#\n" +
@@ -1749,7 +2066,29 @@ const file_unwedge_v1_unwedge_proto_rawDesc = "" +
 	"powerState\x12\x19\n" +
 	"\btftp_dir\x18\x06 \x01(\tR\atftpDir\x12!\n" +
 	"\ftftp_address\x18\a \x01(\tR\vtftpAddress\x120\n" +
-	"\x14console_buffer_bytes\x18\b \x01(\x03R\x12consoleBufferBytes\"9\n" +
+	"\x14console_buffer_bytes\x18\b \x01(\x03R\x12consoleBufferBytes\x12%\n" +
+	"\x0esession_active\x18\t \x01(\bR\rsessionActive\x12#\n" +
+	"\rsession_owner\x18\n" +
+	" \x01(\tR\fsessionOwner\x12:\n" +
+	"\x1asession_started_at_unix_ms\x18\v \x01(\x03R\x16sessionStartedAtUnixMs\x12:\n" +
+	"\x1asession_expires_at_unix_ms\x18\f \x01(\x03R\x16sessionExpiresAtUnixMs\"S\n" +
+	"\x13StartSessionRequest\x12\x14\n" +
+	"\x05owner\x18\x01 \x01(\tR\x05owner\x12&\n" +
+	"\x0fwait_timeout_ms\x18\x02 \x01(\x03R\rwaitTimeoutMs\"y\n" +
+	"\x14StartSessionResponse\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12+\n" +
+	"\x12expires_at_unix_ms\x18\x02 \x01(\x03R\x0fexpiresAtUnixMs\x12\x15\n" +
+	"\x06ttl_ms\x18\x03 \x01(\x03R\x05ttlMs\"5\n" +
+	"\x14FinishSessionRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"\x17\n" +
+	"\x15FinishSessionResponse\",\n" +
+	"\vPingRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\";\n" +
+	"\fPingResponse\x12+\n" +
+	"\x12expires_at_unix_ms\x18\x01 \x01(\x03R\x0fexpiresAtUnixMs\"9\n" +
 	"\x14StreamConsoleRequest\x12!\n" +
 	"\freplay_bytes\x18\x01 \x01(\rR\vreplayBytes\":\n" +
 	"\fConsoleChunk\x12\x12\n" +
@@ -1861,9 +2200,12 @@ const file_unwedge_v1_unwedge_proto_rawDesc = "" +
 	"\x0fPOWER_ACTION_ON\x10\x01\x12\x14\n" +
 	"\x10POWER_ACTION_OFF\x10\x02\x12\x16\n" +
 	"\x12POWER_ACTION_CYCLE\x10\x03\x12\x17\n" +
-	"\x13POWER_ACTION_STATUS\x10\x042\x95\b\n" +
+	"\x13POWER_ACTION_STATUS\x10\x042\xf9\t\n" +
 	"\aUnwedge\x12H\n" +
-	"\tGetStatus\x12\x1c.unwedge.v1.GetStatusRequest\x1a\x1d.unwedge.v1.GetStatusResponse\x12M\n" +
+	"\tGetStatus\x12\x1c.unwedge.v1.GetStatusRequest\x1a\x1d.unwedge.v1.GetStatusResponse\x12Q\n" +
+	"\fStartSession\x12\x1f.unwedge.v1.StartSessionRequest\x1a .unwedge.v1.StartSessionResponse\x12T\n" +
+	"\rFinishSession\x12 .unwedge.v1.FinishSessionRequest\x1a!.unwedge.v1.FinishSessionResponse\x129\n" +
+	"\x04Ping\x12\x17.unwedge.v1.PingRequest\x1a\x18.unwedge.v1.PingResponse\x12M\n" +
 	"\rStreamConsole\x12 .unwedge.v1.StreamConsoleRequest\x1a\x18.unwedge.v1.ConsoleChunk0\x01\x12W\n" +
 	"\x0eReadConsoleLog\x12!.unwedge.v1.ReadConsoleLogRequest\x1a\".unwedge.v1.ReadConsoleLogResponse\x12Q\n" +
 	"\fWriteConsole\x12\x1f.unwedge.v1.WriteConsoleRequest\x1a .unwedge.v1.WriteConsoleResponse\x12W\n" +
@@ -1894,74 +2236,86 @@ func file_unwedge_v1_unwedge_proto_rawDescGZIP() []byte {
 }
 
 var file_unwedge_v1_unwedge_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_unwedge_v1_unwedge_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_unwedge_v1_unwedge_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
 var file_unwedge_v1_unwedge_proto_goTypes = []any{
 	(PowerState)(0),                     // 0: unwedge.v1.PowerState
 	(PowerAction)(0),                    // 1: unwedge.v1.PowerAction
 	(BootEvent_Kind)(0),                 // 2: unwedge.v1.BootEvent.Kind
 	(*GetStatusRequest)(nil),            // 3: unwedge.v1.GetStatusRequest
 	(*GetStatusResponse)(nil),           // 4: unwedge.v1.GetStatusResponse
-	(*StreamConsoleRequest)(nil),        // 5: unwedge.v1.StreamConsoleRequest
-	(*ConsoleChunk)(nil),                // 6: unwedge.v1.ConsoleChunk
-	(*ReadConsoleLogRequest)(nil),       // 7: unwedge.v1.ReadConsoleLogRequest
-	(*ReadConsoleLogResponse)(nil),      // 8: unwedge.v1.ReadConsoleLogResponse
-	(*WriteConsoleRequest)(nil),         // 9: unwedge.v1.WriteConsoleRequest
-	(*WriteConsoleResponse)(nil),        // 10: unwedge.v1.WriteConsoleResponse
-	(*WaitForPatternRequest)(nil),       // 11: unwedge.v1.WaitForPatternRequest
-	(*WaitForPatternResponse)(nil),      // 12: unwedge.v1.WaitForPatternResponse
-	(*PowerControlRequest)(nil),         // 13: unwedge.v1.PowerControlRequest
-	(*PowerControlResponse)(nil),        // 14: unwedge.v1.PowerControlResponse
-	(*BootEvent)(nil),                   // 15: unwedge.v1.BootEvent
-	(*InterruptBootRequest)(nil),        // 16: unwedge.v1.InterruptBootRequest
-	(*NetbootRequest)(nil),              // 17: unwedge.v1.NetbootRequest
-	(*RunUbootCommandRequest)(nil),      // 18: unwedge.v1.RunUbootCommandRequest
-	(*RunUbootCommandResponse)(nil),     // 19: unwedge.v1.RunUbootCommandResponse
-	(*UploadImageRequest)(nil),          // 20: unwedge.v1.UploadImageRequest
-	(*UploadImageResponse)(nil),         // 21: unwedge.v1.UploadImageResponse
-	(*ListImagesRequest)(nil),           // 22: unwedge.v1.ListImagesRequest
-	(*ImageInfo)(nil),                   // 23: unwedge.v1.ImageInfo
-	(*ListImagesResponse)(nil),          // 24: unwedge.v1.ListImagesResponse
-	(*DeleteImageRequest)(nil),          // 25: unwedge.v1.DeleteImageRequest
-	(*DeleteImageResponse)(nil),         // 26: unwedge.v1.DeleteImageResponse
-	(*SSHExecRequest)(nil),              // 27: unwedge.v1.SSHExecRequest
-	(*SSHExecResponse)(nil),             // 28: unwedge.v1.SSHExecResponse
-	(*UploadImageRequest_Metadata)(nil), // 29: unwedge.v1.UploadImageRequest.Metadata
+	(*StartSessionRequest)(nil),         // 5: unwedge.v1.StartSessionRequest
+	(*StartSessionResponse)(nil),        // 6: unwedge.v1.StartSessionResponse
+	(*FinishSessionRequest)(nil),        // 7: unwedge.v1.FinishSessionRequest
+	(*FinishSessionResponse)(nil),       // 8: unwedge.v1.FinishSessionResponse
+	(*PingRequest)(nil),                 // 9: unwedge.v1.PingRequest
+	(*PingResponse)(nil),                // 10: unwedge.v1.PingResponse
+	(*StreamConsoleRequest)(nil),        // 11: unwedge.v1.StreamConsoleRequest
+	(*ConsoleChunk)(nil),                // 12: unwedge.v1.ConsoleChunk
+	(*ReadConsoleLogRequest)(nil),       // 13: unwedge.v1.ReadConsoleLogRequest
+	(*ReadConsoleLogResponse)(nil),      // 14: unwedge.v1.ReadConsoleLogResponse
+	(*WriteConsoleRequest)(nil),         // 15: unwedge.v1.WriteConsoleRequest
+	(*WriteConsoleResponse)(nil),        // 16: unwedge.v1.WriteConsoleResponse
+	(*WaitForPatternRequest)(nil),       // 17: unwedge.v1.WaitForPatternRequest
+	(*WaitForPatternResponse)(nil),      // 18: unwedge.v1.WaitForPatternResponse
+	(*PowerControlRequest)(nil),         // 19: unwedge.v1.PowerControlRequest
+	(*PowerControlResponse)(nil),        // 20: unwedge.v1.PowerControlResponse
+	(*BootEvent)(nil),                   // 21: unwedge.v1.BootEvent
+	(*InterruptBootRequest)(nil),        // 22: unwedge.v1.InterruptBootRequest
+	(*NetbootRequest)(nil),              // 23: unwedge.v1.NetbootRequest
+	(*RunUbootCommandRequest)(nil),      // 24: unwedge.v1.RunUbootCommandRequest
+	(*RunUbootCommandResponse)(nil),     // 25: unwedge.v1.RunUbootCommandResponse
+	(*UploadImageRequest)(nil),          // 26: unwedge.v1.UploadImageRequest
+	(*UploadImageResponse)(nil),         // 27: unwedge.v1.UploadImageResponse
+	(*ListImagesRequest)(nil),           // 28: unwedge.v1.ListImagesRequest
+	(*ImageInfo)(nil),                   // 29: unwedge.v1.ImageInfo
+	(*ListImagesResponse)(nil),          // 30: unwedge.v1.ListImagesResponse
+	(*DeleteImageRequest)(nil),          // 31: unwedge.v1.DeleteImageRequest
+	(*DeleteImageResponse)(nil),         // 32: unwedge.v1.DeleteImageResponse
+	(*SSHExecRequest)(nil),              // 33: unwedge.v1.SSHExecRequest
+	(*SSHExecResponse)(nil),             // 34: unwedge.v1.SSHExecResponse
+	(*UploadImageRequest_Metadata)(nil), // 35: unwedge.v1.UploadImageRequest.Metadata
 }
 var file_unwedge_v1_unwedge_proto_depIdxs = []int32{
 	0,  // 0: unwedge.v1.GetStatusResponse.power_state:type_name -> unwedge.v1.PowerState
 	1,  // 1: unwedge.v1.PowerControlRequest.action:type_name -> unwedge.v1.PowerAction
 	0,  // 2: unwedge.v1.PowerControlResponse.state:type_name -> unwedge.v1.PowerState
 	2,  // 3: unwedge.v1.BootEvent.kind:type_name -> unwedge.v1.BootEvent.Kind
-	29, // 4: unwedge.v1.UploadImageRequest.metadata:type_name -> unwedge.v1.UploadImageRequest.Metadata
-	23, // 5: unwedge.v1.ListImagesResponse.images:type_name -> unwedge.v1.ImageInfo
+	35, // 4: unwedge.v1.UploadImageRequest.metadata:type_name -> unwedge.v1.UploadImageRequest.Metadata
+	29, // 5: unwedge.v1.ListImagesResponse.images:type_name -> unwedge.v1.ImageInfo
 	3,  // 6: unwedge.v1.Unwedge.GetStatus:input_type -> unwedge.v1.GetStatusRequest
-	5,  // 7: unwedge.v1.Unwedge.StreamConsole:input_type -> unwedge.v1.StreamConsoleRequest
-	7,  // 8: unwedge.v1.Unwedge.ReadConsoleLog:input_type -> unwedge.v1.ReadConsoleLogRequest
-	9,  // 9: unwedge.v1.Unwedge.WriteConsole:input_type -> unwedge.v1.WriteConsoleRequest
-	11, // 10: unwedge.v1.Unwedge.WaitForPattern:input_type -> unwedge.v1.WaitForPatternRequest
-	13, // 11: unwedge.v1.Unwedge.PowerControl:input_type -> unwedge.v1.PowerControlRequest
-	16, // 12: unwedge.v1.Unwedge.InterruptBoot:input_type -> unwedge.v1.InterruptBootRequest
-	17, // 13: unwedge.v1.Unwedge.Netboot:input_type -> unwedge.v1.NetbootRequest
-	18, // 14: unwedge.v1.Unwedge.RunUbootCommand:input_type -> unwedge.v1.RunUbootCommandRequest
-	20, // 15: unwedge.v1.Unwedge.UploadImage:input_type -> unwedge.v1.UploadImageRequest
-	22, // 16: unwedge.v1.Unwedge.ListImages:input_type -> unwedge.v1.ListImagesRequest
-	25, // 17: unwedge.v1.Unwedge.DeleteImage:input_type -> unwedge.v1.DeleteImageRequest
-	27, // 18: unwedge.v1.Unwedge.SSHExec:input_type -> unwedge.v1.SSHExecRequest
-	4,  // 19: unwedge.v1.Unwedge.GetStatus:output_type -> unwedge.v1.GetStatusResponse
-	6,  // 20: unwedge.v1.Unwedge.StreamConsole:output_type -> unwedge.v1.ConsoleChunk
-	8,  // 21: unwedge.v1.Unwedge.ReadConsoleLog:output_type -> unwedge.v1.ReadConsoleLogResponse
-	10, // 22: unwedge.v1.Unwedge.WriteConsole:output_type -> unwedge.v1.WriteConsoleResponse
-	12, // 23: unwedge.v1.Unwedge.WaitForPattern:output_type -> unwedge.v1.WaitForPatternResponse
-	14, // 24: unwedge.v1.Unwedge.PowerControl:output_type -> unwedge.v1.PowerControlResponse
-	15, // 25: unwedge.v1.Unwedge.InterruptBoot:output_type -> unwedge.v1.BootEvent
-	15, // 26: unwedge.v1.Unwedge.Netboot:output_type -> unwedge.v1.BootEvent
-	19, // 27: unwedge.v1.Unwedge.RunUbootCommand:output_type -> unwedge.v1.RunUbootCommandResponse
-	21, // 28: unwedge.v1.Unwedge.UploadImage:output_type -> unwedge.v1.UploadImageResponse
-	24, // 29: unwedge.v1.Unwedge.ListImages:output_type -> unwedge.v1.ListImagesResponse
-	26, // 30: unwedge.v1.Unwedge.DeleteImage:output_type -> unwedge.v1.DeleteImageResponse
-	28, // 31: unwedge.v1.Unwedge.SSHExec:output_type -> unwedge.v1.SSHExecResponse
-	19, // [19:32] is the sub-list for method output_type
-	6,  // [6:19] is the sub-list for method input_type
+	5,  // 7: unwedge.v1.Unwedge.StartSession:input_type -> unwedge.v1.StartSessionRequest
+	7,  // 8: unwedge.v1.Unwedge.FinishSession:input_type -> unwedge.v1.FinishSessionRequest
+	9,  // 9: unwedge.v1.Unwedge.Ping:input_type -> unwedge.v1.PingRequest
+	11, // 10: unwedge.v1.Unwedge.StreamConsole:input_type -> unwedge.v1.StreamConsoleRequest
+	13, // 11: unwedge.v1.Unwedge.ReadConsoleLog:input_type -> unwedge.v1.ReadConsoleLogRequest
+	15, // 12: unwedge.v1.Unwedge.WriteConsole:input_type -> unwedge.v1.WriteConsoleRequest
+	17, // 13: unwedge.v1.Unwedge.WaitForPattern:input_type -> unwedge.v1.WaitForPatternRequest
+	19, // 14: unwedge.v1.Unwedge.PowerControl:input_type -> unwedge.v1.PowerControlRequest
+	22, // 15: unwedge.v1.Unwedge.InterruptBoot:input_type -> unwedge.v1.InterruptBootRequest
+	23, // 16: unwedge.v1.Unwedge.Netboot:input_type -> unwedge.v1.NetbootRequest
+	24, // 17: unwedge.v1.Unwedge.RunUbootCommand:input_type -> unwedge.v1.RunUbootCommandRequest
+	26, // 18: unwedge.v1.Unwedge.UploadImage:input_type -> unwedge.v1.UploadImageRequest
+	28, // 19: unwedge.v1.Unwedge.ListImages:input_type -> unwedge.v1.ListImagesRequest
+	31, // 20: unwedge.v1.Unwedge.DeleteImage:input_type -> unwedge.v1.DeleteImageRequest
+	33, // 21: unwedge.v1.Unwedge.SSHExec:input_type -> unwedge.v1.SSHExecRequest
+	4,  // 22: unwedge.v1.Unwedge.GetStatus:output_type -> unwedge.v1.GetStatusResponse
+	6,  // 23: unwedge.v1.Unwedge.StartSession:output_type -> unwedge.v1.StartSessionResponse
+	8,  // 24: unwedge.v1.Unwedge.FinishSession:output_type -> unwedge.v1.FinishSessionResponse
+	10, // 25: unwedge.v1.Unwedge.Ping:output_type -> unwedge.v1.PingResponse
+	12, // 26: unwedge.v1.Unwedge.StreamConsole:output_type -> unwedge.v1.ConsoleChunk
+	14, // 27: unwedge.v1.Unwedge.ReadConsoleLog:output_type -> unwedge.v1.ReadConsoleLogResponse
+	16, // 28: unwedge.v1.Unwedge.WriteConsole:output_type -> unwedge.v1.WriteConsoleResponse
+	18, // 29: unwedge.v1.Unwedge.WaitForPattern:output_type -> unwedge.v1.WaitForPatternResponse
+	20, // 30: unwedge.v1.Unwedge.PowerControl:output_type -> unwedge.v1.PowerControlResponse
+	21, // 31: unwedge.v1.Unwedge.InterruptBoot:output_type -> unwedge.v1.BootEvent
+	21, // 32: unwedge.v1.Unwedge.Netboot:output_type -> unwedge.v1.BootEvent
+	25, // 33: unwedge.v1.Unwedge.RunUbootCommand:output_type -> unwedge.v1.RunUbootCommandResponse
+	27, // 34: unwedge.v1.Unwedge.UploadImage:output_type -> unwedge.v1.UploadImageResponse
+	30, // 35: unwedge.v1.Unwedge.ListImages:output_type -> unwedge.v1.ListImagesResponse
+	32, // 36: unwedge.v1.Unwedge.DeleteImage:output_type -> unwedge.v1.DeleteImageResponse
+	34, // 37: unwedge.v1.Unwedge.SSHExec:output_type -> unwedge.v1.SSHExecResponse
+	22, // [22:38] is the sub-list for method output_type
+	6,  // [6:22] is the sub-list for method input_type
 	6,  // [6:6] is the sub-list for extension type_name
 	6,  // [6:6] is the sub-list for extension extendee
 	0,  // [0:6] is the sub-list for field type_name
@@ -1972,7 +2326,7 @@ func file_unwedge_v1_unwedge_proto_init() {
 	if File_unwedge_v1_unwedge_proto != nil {
 		return
 	}
-	file_unwedge_v1_unwedge_proto_msgTypes[17].OneofWrappers = []any{
+	file_unwedge_v1_unwedge_proto_msgTypes[23].OneofWrappers = []any{
 		(*UploadImageRequest_Metadata_)(nil),
 		(*UploadImageRequest_Chunk)(nil),
 	}
@@ -1982,7 +2336,7 @@ func file_unwedge_v1_unwedge_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_unwedge_v1_unwedge_proto_rawDesc), len(file_unwedge_v1_unwedge_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   27,
+			NumMessages:   33,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

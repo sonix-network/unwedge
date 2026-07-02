@@ -26,6 +26,9 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	Unwedge_GetStatus_FullMethodName       = "/unwedge.v1.Unwedge/GetStatus"
+	Unwedge_StartSession_FullMethodName    = "/unwedge.v1.Unwedge/StartSession"
+	Unwedge_FinishSession_FullMethodName   = "/unwedge.v1.Unwedge/FinishSession"
+	Unwedge_Ping_FullMethodName            = "/unwedge.v1.Unwedge/Ping"
 	Unwedge_StreamConsole_FullMethodName   = "/unwedge.v1.Unwedge/StreamConsole"
 	Unwedge_ReadConsoleLog_FullMethodName  = "/unwedge.v1.Unwedge/ReadConsoleLog"
 	Unwedge_WriteConsole_FullMethodName    = "/unwedge.v1.Unwedge/WriteConsole"
@@ -47,8 +50,19 @@ const (
 // WrtRemote is the full control surface for one target device.
 type UnwedgeClient interface {
 	// GetStatus reports the health and configuration of the controller and its
-	// view of the target (serial connected, last power state, etc.).
+	// view of the target (serial connected, last power state, etc.). It is exempt
+	// from session enforcement so the lock state is always observable.
 	GetStatus(ctx context.Context, in *GetStatusRequest, opts ...grpc.CallOption) (*GetStatusResponse, error)
+	// StartSession acquires the exclusive lock. If another session holds it, this
+	// blocks until the lock is free, the wait_timeout elapses, or the caller's
+	// context is cancelled.
+	StartSession(ctx context.Context, in *StartSessionRequest, opts ...grpc.CallOption) (*StartSessionResponse, error)
+	// FinishSession releases the lock held by the given session ID. It is
+	// idempotent; releasing an already-free or already-expired lock is not an
+	// error, but releasing a lock held by a different session is.
+	FinishSession(ctx context.Context, in *FinishSessionRequest, opts ...grpc.CallOption) (*FinishSessionResponse, error)
+	// Ping refreshes the session's TTL without doing any other work.
+	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
 	// StreamConsole streams console output as it arrives. If replay_bytes > 0 the
 	// server first sends up to that many bytes of buffered scrollback so a newly
 	// attached agent has recent context.
@@ -104,6 +118,36 @@ func (c *unwedgeClient) GetStatus(ctx context.Context, in *GetStatusRequest, opt
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetStatusResponse)
 	err := c.cc.Invoke(ctx, Unwedge_GetStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *unwedgeClient) StartSession(ctx context.Context, in *StartSessionRequest, opts ...grpc.CallOption) (*StartSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartSessionResponse)
+	err := c.cc.Invoke(ctx, Unwedge_StartSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *unwedgeClient) FinishSession(ctx context.Context, in *FinishSessionRequest, opts ...grpc.CallOption) (*FinishSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FinishSessionResponse)
+	err := c.cc.Invoke(ctx, Unwedge_FinishSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *unwedgeClient) Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PingResponse)
+	err := c.cc.Invoke(ctx, Unwedge_Ping_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -267,8 +311,19 @@ func (c *unwedgeClient) SSHExec(ctx context.Context, in *SSHExecRequest, opts ..
 // WrtRemote is the full control surface for one target device.
 type UnwedgeServer interface {
 	// GetStatus reports the health and configuration of the controller and its
-	// view of the target (serial connected, last power state, etc.).
+	// view of the target (serial connected, last power state, etc.). It is exempt
+	// from session enforcement so the lock state is always observable.
 	GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error)
+	// StartSession acquires the exclusive lock. If another session holds it, this
+	// blocks until the lock is free, the wait_timeout elapses, or the caller's
+	// context is cancelled.
+	StartSession(context.Context, *StartSessionRequest) (*StartSessionResponse, error)
+	// FinishSession releases the lock held by the given session ID. It is
+	// idempotent; releasing an already-free or already-expired lock is not an
+	// error, but releasing a lock held by a different session is.
+	FinishSession(context.Context, *FinishSessionRequest) (*FinishSessionResponse, error)
+	// Ping refreshes the session's TTL without doing any other work.
+	Ping(context.Context, *PingRequest) (*PingResponse, error)
 	// StreamConsole streams console output as it arrives. If replay_bytes > 0 the
 	// server first sends up to that many bytes of buffered scrollback so a newly
 	// attached agent has recent context.
@@ -322,6 +377,15 @@ type UnimplementedUnwedgeServer struct{}
 
 func (UnimplementedUnwedgeServer) GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetStatus not implemented")
+}
+func (UnimplementedUnwedgeServer) StartSession(context.Context, *StartSessionRequest) (*StartSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartSession not implemented")
+}
+func (UnimplementedUnwedgeServer) FinishSession(context.Context, *FinishSessionRequest) (*FinishSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method FinishSession not implemented")
+}
+func (UnimplementedUnwedgeServer) Ping(context.Context, *PingRequest) (*PingResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Ping not implemented")
 }
 func (UnimplementedUnwedgeServer) StreamConsole(*StreamConsoleRequest, grpc.ServerStreamingServer[ConsoleChunk]) error {
 	return status.Error(codes.Unimplemented, "method StreamConsole not implemented")
@@ -394,6 +458,60 @@ func _Unwedge_GetStatus_Handler(srv interface{}, ctx context.Context, dec func(i
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(UnwedgeServer).GetStatus(ctx, req.(*GetStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Unwedge_StartSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UnwedgeServer).StartSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Unwedge_StartSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UnwedgeServer).StartSession(ctx, req.(*StartSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Unwedge_FinishSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FinishSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UnwedgeServer).FinishSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Unwedge_FinishSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UnwedgeServer).FinishSession(ctx, req.(*FinishSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Unwedge_Ping_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UnwedgeServer).Ping(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Unwedge_Ping_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UnwedgeServer).Ping(ctx, req.(*PingRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -592,6 +710,18 @@ var Unwedge_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetStatus",
 			Handler:    _Unwedge_GetStatus_Handler,
+		},
+		{
+			MethodName: "StartSession",
+			Handler:    _Unwedge_StartSession_Handler,
+		},
+		{
+			MethodName: "FinishSession",
+			Handler:    _Unwedge_FinishSession_Handler,
+		},
+		{
+			MethodName: "Ping",
+			Handler:    _Unwedge_Ping_Handler,
 		},
 		{
 			MethodName: "ReadConsoleLog",

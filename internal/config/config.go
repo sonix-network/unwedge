@@ -11,12 +11,21 @@ import (
 
 // Config is the top-level daemon configuration.
 type Config struct {
-	Serial SerialConfig `yaml:"serial"`
-	Power  PowerConfig  `yaml:"power"`
-	UBoot  UBootConfig  `yaml:"uboot"`
-	TFTP   TFTPConfig   `yaml:"tftp"`
-	SSH    SSHConfig    `yaml:"ssh"`
-	GRPC   GRPCConfig   `yaml:"grpc"`
+	Serial  SerialConfig  `yaml:"serial"`
+	Power   PowerConfig   `yaml:"power"`
+	UBoot   UBootConfig   `yaml:"uboot"`
+	TFTP    TFTPConfig    `yaml:"tftp"`
+	SSH     SSHConfig     `yaml:"ssh"`
+	GRPC    GRPCConfig    `yaml:"grpc"`
+	Session SessionConfig `yaml:"session"`
+}
+
+// SessionConfig configures the single-user hardware lock.
+type SessionConfig struct {
+	// Enabled turns on session locking. Default true.
+	Enabled *bool `yaml:"enabled"`
+	// TTL is the idle timeout after which an unrefreshed lock is released.
+	TTL time.Duration `yaml:"ttl"`
 }
 
 // SerialConfig configures the console serial port.
@@ -130,7 +139,16 @@ func Default() Config {
 			Address: ":7777",
 			TLS:     TLSConfig{Enabled: &trueVal},
 		},
+		Session: SessionConfig{
+			Enabled: &trueVal,
+			TTL:     5 * time.Minute,
+		},
 	}
+}
+
+// SessionEnabled reports whether the hardware lock should be enforced.
+func (c *Config) SessionEnabled() bool {
+	return c.Session.Enabled == nil || *c.Session.Enabled
 }
 
 // Load reads YAML from path, overlaying it on Default, then validates.

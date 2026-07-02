@@ -14,8 +14,31 @@ service Unwedge {
   // ---- Introspection -------------------------------------------------------
 
   // GetStatus reports the health and configuration of the controller and its
-  // view of the target (serial connected, last power state, etc.).
+  // view of the target (serial connected, last power state, etc.). It is exempt
+  // from session enforcement so the lock state is always observable.
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+
+  // ---- Session locking -----------------------------------------------------
+  //
+  // The hardware is single-user. A caller must hold a session to invoke any
+  // operational RPC; the session ID is passed in the gRPC metadata header
+  // "unwedge-session-id" (clients do this automatically). Every operational
+  // call refreshes the session's TTL; it expires after an idle timeout so a
+  // crashed client cannot hold the lock forever. GetStatus and the three RPCs
+  // below are exempt from enforcement.
+
+  // StartSession acquires the exclusive lock. If another session holds it, this
+  // blocks until the lock is free, the wait_timeout elapses, or the caller's
+  // context is cancelled.
+  rpc StartSession(StartSessionRequest) returns (StartSessionResponse);
+
+  // FinishSession releases the lock held by the given session ID. It is
+  // idempotent; releasing an already-free or already-expired lock is not an
+  // error, but releasing a lock held by a different session is.
+  rpc FinishSession(FinishSessionRequest) returns (FinishSessionResponse);
+
+  // Ping refreshes the session's TTL without doing any other work.
+  rpc Ping(PingRequest) returns (PingResponse);
 
   // ---- Serial console ------------------------------------------------------
 
@@ -94,6 +117,43 @@ message GetStatusResponse {
   string tftp_dir = 6;
   string tftp_address = 7;         // host:port the TFTP server listens on
   int64 console_buffer_bytes = 8;  // bytes currently buffered in scrollback
+
+  // Session lock state, so contention is always observable.
+  bool session_active = 9;              // true if the unit is currently locked
+  string session_owner = 10;            // owner label supplied at StartSession
+  int64 session_started_at_unix_ms = 11;
+  int64 session_expires_at_unix_ms = 12; // when the lock expires if not refreshed
+}
+
+// ---- Session locking -------------------------------------------------------
+
+message StartSessionRequest {
+  // Optional human-readable label for who is acquiring the lock (e.g.
+  // "github-ci", "user@host"). Shown in GetStatus.
+  string owner = 1;
+  // Maximum time to wait for the lock if it is held. 0 means wait until the
+  // caller's context/deadline. Negative would be non-blocking (fail fast).
+  int64 wait_timeout_ms = 2;
+}
+
+message StartSessionResponse {
+  string session_id = 1;
+  int64 expires_at_unix_ms = 2;
+  int64 ttl_ms = 3; // configured idle TTL, so clients can pace keepalive pings
+}
+
+message FinishSessionRequest {
+  string session_id = 1;
+}
+
+message FinishSessionResponse {}
+
+message PingRequest {
+  string session_id = 1;
+}
+
+message PingResponse {
+  int64 expires_at_unix_ms = 1;
 }
 
 // ---- Serial console --------------------------------------------------------

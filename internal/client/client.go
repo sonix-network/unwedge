@@ -10,13 +10,20 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 
 	unwedgev1 "github.com/sonix-network/unwedge/gen/unwedge/v1"
 	"github.com/sonix-network/unwedge/internal/tlsutil"
 )
+
+// sessionMetadataKey must match server.SessionMetadataKey; the session ID is
+// sent on every operational call so the daemon can enforce the hardware lock.
+const sessionMetadataKey = "unwedge-session-id"
 
 // Options configures a client connection.
 type Options struct {
@@ -40,6 +47,37 @@ type Options struct {
 type Client struct {
 	conn *grpc.ClientConn
 	API  unwedgev1.UnwedgeClient
+
+	mu        sync.Mutex
+	sessionID string // set while holding a session; injected into call metadata
+}
+
+func (c *Client) session() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.sessionID
+}
+
+func (c *Client) setSession(id string) {
+	c.mu.Lock()
+	c.sessionID = id
+	c.mu.Unlock()
+}
+
+// withSession adds the current session ID (if any) to the outgoing metadata.
+func (c *Client) withSession(ctx context.Context) context.Context {
+	if id := c.session(); id != "" {
+		return metadata.AppendToOutgoingContext(ctx, sessionMetadataKey, id)
+	}
+	return ctx
+}
+
+func (c *Client) unaryInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return invoker(c.withSession(ctx), method, req, reply, cc, opts...)
+}
+
+func (c *Client) streamInterceptor(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+	return streamer(c.withSession(ctx), desc, cc, method, opts...)
 }
 
 // Dial connects to the daemon.
@@ -68,11 +106,112 @@ func Dial(o Options) (*Client, error) {
 		dialOpt = grpc.WithTransportCredentials(creds)
 	}
 	dialOpts = append(dialOpts, dialOpt)
+	c := &Client{}
+	dialOpts = append(dialOpts,
+		grpc.WithChainUnaryInterceptor(c.unaryInterceptor),
+		grpc.WithChainStreamInterceptor(c.streamInterceptor),
+	)
 	conn, err := grpc.NewClient(o.Address, dialOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("client: dial %s: %w", o.Address, err)
 	}
-	return &Client{conn: conn, API: unwedgev1.NewUnwedgeClient(conn)}, nil
+	c.conn = conn
+	c.API = unwedgev1.NewUnwedgeClient(conn)
+	return c, nil
+}
+
+// Session is a snapshot of an acquired hardware lock.
+type Session struct {
+	ID        string
+	ExpiresAt time.Time
+	TTL       time.Duration
+}
+
+// Acquire obtains the hardware lock and stores the session ID so it is attached
+// to all subsequent calls. owner is a label shown in GetStatus. wait bounds how
+// long to block for a held lock: 0 blocks until ctx, negative fails fast.
+func (c *Client) Acquire(ctx context.Context, owner string, wait time.Duration) (Session, error) {
+	// Encode wait without letting sub-millisecond durations collapse a negative
+	// (fail-fast) or small positive wait into 0 (which means "block until ctx").
+	var waitMs int64
+	switch {
+	case wait < 0:
+		waitMs = -1
+	case wait == 0:
+		waitMs = 0
+	default:
+		if waitMs = wait.Milliseconds(); waitMs == 0 {
+			waitMs = 1
+		}
+	}
+	resp, err := c.API.StartSession(ctx, &unwedgev1.StartSessionRequest{
+		Owner: owner, WaitTimeoutMs: waitMs,
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	c.setSession(resp.GetSessionId())
+	return Session{
+		ID:        resp.GetSessionId(),
+		ExpiresAt: time.UnixMilli(resp.GetExpiresAtUnixMs()),
+		TTL:       time.Duration(resp.GetTtlMs()) * time.Millisecond,
+	}, nil
+}
+
+// Release finishes the current session, if any. It clears the stored ID even if
+// the RPC fails (the lock will expire on its own).
+func (c *Client) Release(ctx context.Context) error {
+	id := c.session()
+	if id == "" {
+		return nil
+	}
+	c.setSession("")
+	_, err := c.API.FinishSession(ctx, &unwedgev1.FinishSessionRequest{SessionId: id})
+	return err
+}
+
+// Ping refreshes the current session's TTL.
+func (c *Client) Ping(ctx context.Context) error {
+	id := c.session()
+	if id == "" {
+		return nil
+	}
+	_, err := c.API.Ping(ctx, &unwedgev1.PingRequest{SessionId: id})
+	return err
+}
+
+// HasSession reports whether a session is currently held.
+func (c *Client) HasSession() bool { return c.session() != "" }
+
+// ClearSession forgets the stored session ID without contacting the server.
+// Use it when the daemon reports the session was lost (e.g. it expired) so the
+// next call re-acquires.
+func (c *Client) ClearSession() { c.setSession("") }
+
+// StartKeepalive pings the session every interval until the returned stop func
+// is called. Use it for the duration of an active operation so long local work
+// does not let the lock expire. Do NOT use it across idle periods where the
+// lock is meant to auto-release.
+func (c *Client) StartKeepalive(interval time.Duration) (stop func()) {
+	if interval <= 0 {
+		interval = 60 * time.Second
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				pctx, pcancel := context.WithTimeout(ctx, 10*time.Second)
+				_ = c.Ping(pctx)
+				pcancel()
+			}
+		}
+	}()
+	return cancel
 }
 
 // Close closes the connection.

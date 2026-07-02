@@ -13,6 +13,9 @@ import (
 	"syscall"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	unwedgev1 "github.com/sonix-network/unwedge/gen/unwedge/v1"
 	"github.com/sonix-network/unwedge/internal/client"
 	"github.com/sonix-network/unwedge/internal/smoke"
@@ -58,6 +61,9 @@ func realMain() int {
 	verify := fs.Bool("verify", false, "verify image CRC32 in U-Boot before booting")
 	powerCycle := fs.Bool("power-cycle", true, "power-cycle before netboot")
 	timeout := fs.Duration("timeout", 8*time.Minute, "overall timeout for the command")
+	sessionWait := fs.Duration("session-wait", 10*time.Minute, "how long to wait for the hardware lock if held (0 = wait indefinitely)")
+	sessionOwner := fs.String("session-owner", "", "label for who holds the lock (default: user@host)")
+	noSession := fs.Bool("no-session", false, "do not acquire the hardware lock (may conflict with other users)")
 
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, usage)
@@ -108,6 +114,19 @@ func realMain() int {
 		keys: *subKeys, out: *subOut, kernelArgs: *subKernelArgs,
 		verify: *subVerify, powerCycle: *subPowerCycle, timeout: *subTimeout,
 	}
+
+	// Acquire the exclusive hardware lock for operational commands (status is
+	// exempt and observes the lock without holding it). Held for the whole
+	// command and released on exit; a background ping keeps it alive meanwhile.
+	if !*noSession && cmd != "status" {
+		release, err := maybeAcquire(ctx, cl, ownerLabel(*sessionOwner), *sessionWait)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return 1
+		}
+		defer release()
+	}
+
 	if err := dispatch(ctx, cl, cmd, rest, opts); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return 1
@@ -163,6 +182,12 @@ func cmdStatus(ctx context.Context, cl *client.Client) error {
 	fmt.Printf("power state:    %s\n", strings.TrimPrefix(s.PowerState.String(), "POWER_STATE_"))
 	fmt.Printf("tftp:           %s (dir %s)\n", s.TftpAddress, s.TftpDir)
 	fmt.Printf("console buffer: %d bytes\n", s.ConsoleBufferBytes)
+	if s.SessionActive {
+		exp := time.UnixMilli(s.SessionExpiresAtUnixMs)
+		fmt.Printf("session lock:   HELD by %q (expires in %s)\n", s.SessionOwner, time.Until(exp).Round(time.Second))
+	} else {
+		fmt.Printf("session lock:   free\n")
+	}
 	return nil
 }
 
@@ -387,6 +412,51 @@ func passFail(ok bool) string {
 		return "PASS"
 	}
 	return "FAIL"
+}
+
+// ownerLabel returns the session owner label, defaulting to user@host.
+func ownerLabel(override string) string {
+	if override != "" {
+		return override
+	}
+	u := os.Getenv("USER")
+	if u == "" {
+		u = "unwedge"
+	}
+	if h, err := os.Hostname(); err == nil && h != "" {
+		return u + "@" + h
+	}
+	return u
+}
+
+// maybeAcquire grabs the hardware lock, waiting if it is held. It returns a
+// release func (always non-nil). If the daemon has session locking disabled it
+// silently proceeds without a lock.
+func maybeAcquire(ctx context.Context, cl *client.Client, owner string, wait time.Duration) (func(), error) {
+	noop := func() {}
+	// Fast, non-blocking attempt first so we can print a friendly wait notice.
+	sess, err := cl.Acquire(ctx, owner, -1)
+	if err != nil {
+		switch status.Code(err) {
+		case codes.Unimplemented:
+			return noop, nil // session locking disabled on the daemon
+		case codes.FailedPrecondition: // currently held by someone else
+			fmt.Fprintf(os.Stderr, "unwedge: %s; waiting for the hardware lock...\n", status.Convert(err).Message())
+			sess, err = cl.Acquire(ctx, owner, wait)
+			if err != nil {
+				return noop, err
+			}
+		default:
+			return noop, err
+		}
+	}
+	stop := cl.StartKeepalive(sess.TTL / 3)
+	return func() {
+		stop()
+		rctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = cl.Release(rctx)
+	}, nil
 }
 
 func envOr(key, def string) string {

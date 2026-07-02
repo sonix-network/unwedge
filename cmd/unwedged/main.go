@@ -22,6 +22,7 @@ import (
 	"github.com/sonix-network/unwedge/internal/serialconsole"
 	"github.com/sonix-network/unwedge/internal/serialport"
 	"github.com/sonix-network/unwedge/internal/server"
+	"github.com/sonix-network/unwedge/internal/session"
 	"github.com/sonix-network/unwedge/internal/sshexec"
 	"github.com/sonix-network/unwedge/internal/tftp"
 	"github.com/sonix-network/unwedge/internal/tlsutil"
@@ -138,6 +139,16 @@ func run() error {
 		logger.Info("ssh configured", "host", cfg.SSH.Host, "user", cfg.SSH.User)
 	}
 
+	// Session locking (single-user hardware lock).
+	var sessions *session.Manager
+	if cfg.SessionEnabled() {
+		sessions = session.NewManager(cfg.Session.TTL)
+		defer sessions.Close()
+		logger.Info("session locking enabled", "ttl", sessions.TTL())
+	} else {
+		logger.Warn("session locking DISABLED; concurrent clients can conflict")
+	}
+
 	svc := server.New(server.Deps{
 		Version:      version,
 		Console:      console,
@@ -145,6 +156,7 @@ func run() error {
 		Orchestrator: orch,
 		Store:        store,
 		SSH:          ssh,
+		Sessions:     sessions,
 		Logger:       logger,
 		SerialDevice: cfg.Serial.Device,
 		SerialBaud:   uint32(cfg.Serial.Baud),
@@ -169,6 +181,10 @@ func run() error {
 		logger.Warn("grpc TLS DISABLED; do not expose this port to untrusted networks")
 	}
 
+	opts = append(opts,
+		grpc.ChainUnaryInterceptor(svc.UnaryInterceptor),
+		grpc.ChainStreamInterceptor(svc.StreamInterceptor),
+	)
 	grpcSrv := grpc.NewServer(opts...)
 	unwedgev1.RegisterUnwedgeServer(grpcSrv, svc)
 

@@ -15,6 +15,9 @@ import (
 	"syscall"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	unwedgev1 "github.com/sonix-network/unwedge/gen/unwedge/v1"
 	"github.com/sonix-network/unwedge/internal/client"
 	"github.com/sonix-network/unwedge/internal/mcp"
@@ -38,6 +41,8 @@ func run() error {
 	serverName := flag.String("server-name", os.Getenv("UNWEDGE_SERVER_NAME"), "override TLS server name")
 	insecure := flag.Bool("insecure", false, "skip server cert verification (dev only)")
 	noTLS := flag.Bool("no-tls", false, "connect without TLS (local/testing only)")
+	sessionOwner := flag.String("session-owner", "", "hardware-lock owner label (default: unwedge-mcp@host)")
+	sessionWait := flag.Duration("session-wait", 10*time.Minute, "how long a tool call waits for the hardware lock if held")
 	flag.Parse()
 
 	cl, err := client.Dial(client.Options{
@@ -49,11 +54,32 @@ func run() error {
 	}
 	defer cl.Close()
 
+	owner := ownerLabel(*sessionOwner)
 	srv := mcp.NewServer("unwedge", version, os.Stdin, os.Stdout)
-	registerTools(srv, cl)
+	registerTools(srv, cl, owner, *sessionWait)
+
+	// Guard operational tools with the hardware lock: lazily acquire on first
+	// use, auto-refresh via each call (server-side), and re-acquire if the lock
+	// was lost (e.g. it expired after >TTL idle). Introspection and the explicit
+	// lock tools are exempt. No background keepalive, so an idle agent releases.
+	lockExempt := map[string]bool{"get_status": true, "acquire_lock": true, "release_lock": true}
+	srv.Use(func(name string, next mcp.ToolHandler) mcp.ToolHandler {
+		if lockExempt[name] {
+			return next
+		}
+		return func(ctx context.Context, args json.RawMessage) (string, error) {
+			return callWithSession(ctx, cl, owner, *sessionWait, func() (string, error) { return next(ctx, args) })
+		}
+	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	// Release the lock when the bridge shuts down.
+	defer func() {
+		rctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = cl.Release(rctx)
+	}()
 	fmt.Fprintf(os.Stderr, "unwedge-mcp: connected to %s, serving MCP on stdio\n", *addr)
 	return srv.Serve(ctx)
 }
@@ -69,20 +95,56 @@ func schema(props obj, required ...string) obj {
 	return s
 }
 
-func registerTools(srv *mcp.Server, cl *client.Client) {
+func registerTools(srv *mcp.Server, cl *client.Client, owner string, wait time.Duration) {
 	srv.AddTool(mcp.Tool{
 		Name:        "get_status",
-		Description: "Get controller/target status: serial connection, power state, TFTP dir, console buffer size.",
+		Description: "Get controller/target status: serial connection, power state, TFTP dir, and hardware-lock (session) state. Does not acquire the lock.",
 		InputSchema: schema(obj{}),
 		Handler: func(ctx context.Context, _ json.RawMessage) (string, error) {
 			s, err := cl.API.GetStatus(ctx, &unwedgev1.GetStatusRequest{})
 			if err != nil {
 				return "", err
 			}
-			return fmt.Sprintf("version=%s serial=%s@%d connected=%v power=%s tftp=%s dir=%s buffer=%dB",
+			lock := "free"
+			if s.SessionActive {
+				lock = fmt.Sprintf("HELD by %q (expires in %s)", s.SessionOwner,
+					time.Until(time.UnixMilli(s.SessionExpiresAtUnixMs)).Round(time.Second))
+			}
+			return fmt.Sprintf("version=%s serial=%s@%d connected=%v power=%s tftp=%s dir=%s buffer=%dB lock=%s",
 				s.Version, s.SerialDevice, s.SerialBaud, s.SerialConnected,
 				strings.TrimPrefix(s.PowerState.String(), "POWER_STATE_"),
-				s.TftpAddress, s.TftpDir, s.ConsoleBufferBytes), nil
+				s.TftpAddress, s.TftpDir, s.ConsoleBufferBytes, lock), nil
+		},
+	})
+
+	srv.AddTool(mcp.Tool{
+		Name:        "acquire_lock",
+		Description: "Explicitly acquire the exclusive hardware lock and hold it (operational tools auto-acquire, but use this to grab the unit up front for a long sequence). Blocks if another client holds it.",
+		InputSchema: schema(obj{}),
+		Handler: func(ctx context.Context, _ json.RawMessage) (string, error) {
+			if cl.HasSession() {
+				return "already holding the hardware lock", nil
+			}
+			sess, err := cl.Acquire(ctx, owner, wait)
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("acquired hardware lock (expires in %s)", time.Until(sess.ExpiresAt).Round(time.Second)), nil
+		},
+	})
+
+	srv.AddTool(mcp.Tool{
+		Name:        "release_lock",
+		Description: "Release the exclusive hardware lock so another client can use the unit. The lock also auto-releases after the idle TTL.",
+		InputSchema: schema(obj{}),
+		Handler: func(ctx context.Context, _ json.RawMessage) (string, error) {
+			if !cl.HasSession() {
+				return "no hardware lock held", nil
+			}
+			if err := cl.Release(ctx); err != nil {
+				return "", err
+			}
+			return "released hardware lock", nil
 		},
 	})
 
@@ -441,6 +503,50 @@ func outNote(p string) string {
 		return ""
 	}
 	return ", written to " + p
+}
+
+// ownerLabel defaults the hardware-lock owner to unwedge-mcp@host.
+func ownerLabel(override string) string {
+	if override != "" {
+		return override
+	}
+	if h, err := os.Hostname(); err == nil && h != "" {
+		return "unwedge-mcp@" + h
+	}
+	return "unwedge-mcp"
+}
+
+// callWithSession ensures the hardware lock is held, runs fn, and if the daemon
+// reports the session was lost (expired after idle), re-acquires and retries once.
+func callWithSession(ctx context.Context, cl *client.Client, owner string, wait time.Duration, fn func() (string, error)) (string, error) {
+	if err := ensureSession(ctx, cl, owner, wait); err != nil {
+		return "", err
+	}
+	text, err := fn()
+	if err != nil && sessionLost(err) {
+		cl.ClearSession()
+		if err2 := ensureSession(ctx, cl, owner, wait); err2 != nil {
+			return "", err2
+		}
+		return fn()
+	}
+	return text, err
+}
+
+func ensureSession(ctx context.Context, cl *client.Client, owner string, wait time.Duration) error {
+	if cl.HasSession() {
+		return nil
+	}
+	_, err := cl.Acquire(ctx, owner, wait)
+	if err != nil && status.Code(err) == codes.Unimplemented {
+		return nil // session locking disabled on the daemon
+	}
+	return err
+}
+
+func sessionLost(err error) bool {
+	return status.Code(err) == codes.FailedPrecondition &&
+		strings.Contains(strings.ToLower(status.Convert(err).Message()), "session")
 }
 
 func envOr(key, def string) string {

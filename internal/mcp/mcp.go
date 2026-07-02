@@ -28,6 +28,10 @@ type Tool struct {
 	Handler     ToolHandler
 }
 
+// Middleware wraps a tool handler; it can run logic before/after (e.g. acquire
+// a lock). It receives the tool name so it can treat some tools specially.
+type Middleware func(toolName string, next ToolHandler) ToolHandler
+
 // Server is a stdio MCP server.
 type Server struct {
 	name    string
@@ -36,9 +40,13 @@ type Server struct {
 	w       io.Writer
 	wmu     sync.Mutex
 
-	tools map[string]Tool
-	order []string
+	tools      map[string]Tool
+	order      []string
+	middleware Middleware
 }
+
+// Use installs a middleware applied to every tool call.
+func (s *Server) Use(m Middleware) { s.middleware = m }
 
 // NewServer creates a server reading from in and writing to out.
 func NewServer(name, version string, in io.Reader, out io.Writer) *Server {
@@ -174,7 +182,11 @@ func (s *Server) handleToolCall(ctx context.Context, req rpcRequest) {
 		s.writeError(req.ID, -32602, "unknown tool: "+params.Name)
 		return
 	}
-	text, err := tool.Handler(ctx, params.Arguments)
+	handler := tool.Handler
+	if s.middleware != nil {
+		handler = s.middleware(tool.Name, handler)
+	}
+	text, err := handler(ctx, params.Arguments)
 	if err != nil {
 		s.reply(req.ID, toolResult("error: "+err.Error(), true))
 		return

@@ -87,12 +87,33 @@ unwedge -out boot.log smoke openwrt-…-initramfs-kernel.bin
 The `write` command sends control keys too:
 `unwedge write --keys ctrl-x` interrupts U-Boot.
 
+## Session locking (multiple agents, one unit)
+
+The hardware is single-user. When session locking is enabled (default), a client
+must hold an exclusive **session** to run any operational RPC; `GetStatus` is
+exempt so the lock is always observable. `StartSession` blocks until the lock is
+free, every call refreshes the holder's TTL, and an idle session auto-releases
+after `session.ttl` (default 5m) so a crashed client can't hold the unit forever.
+The session ID rides in gRPC metadata (`unwedge-session-id`) via client/server
+interceptors — callers don't plumb it through.
+
+This is handled for you:
+- **CLI**: each command transparently acquires the lock (waiting if held, with a
+  notice), keeps it alive while running, and releases on exit. `unwedge status`
+  shows who holds it. Flags: `--session-wait`, `--session-owner`, `--no-session`.
+- **MCP**: the bridge lazily acquires on the first operational tool, refreshes on
+  each call, and releases after idle (or via the `release_lock` tool). Extra
+  tools: `acquire_lock`, `release_lock`; `get_status` reports the lock.
+
+A client talking to a daemon without locking (older build) degrades gracefully.
+
 ## Using it from an AI agent (MCP)
 
 Run `unwedge-mcp` as an MCP server (stdio). It connects to `unwedged` and
-exposes tools: `get_status`, `read_console_log`, `write_console`,
-`wait_for_pattern`, `power`, `run_uboot_command`, `interrupt_boot`, `netboot`,
-`list_images`, `upload_image`, `delete_image`, `ssh_exec`, and `smoke_test`.
+exposes tools: `get_status`, `acquire_lock`, `release_lock`, `read_console_log`,
+`write_console`, `wait_for_pattern`, `power`, `run_uboot_command`,
+`interrupt_boot`, `netboot`, `list_images`, `upload_image`, `delete_image`,
+`ssh_exec`, and `smoke_test`.
 
 Example Claude Code / MCP client config:
 

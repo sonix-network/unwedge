@@ -47,6 +47,15 @@ ssh:
   # known_hosts_path: ""  # empty accepts any host key (target key changes each netboot)
   dial_timeout: 10s
 
+session:
+  # Single-user hardware lock. When enabled, a client must hold a session
+  # (acquired via StartSession) to invoke any operational RPC; GetStatus is
+  # exempt so the lock is always observable. The CLI and MCP bridge acquire and
+  # release this automatically. A lock auto-releases after this idle timeout so
+  # a crashed client cannot hold the unit forever.
+  enabled: true
+  ttl: 5m
+
 grpc:
   address: ":7777"
   tls:
