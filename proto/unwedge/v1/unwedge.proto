@@ -24,8 +24,9 @@ service Unwedge {
   // operational RPC; the session ID is passed in the gRPC metadata header
   // "unwedge-session-id" (clients do this automatically). Every operational
   // call refreshes the session's TTL; it expires after an idle timeout so a
-  // crashed client cannot hold the lock forever. GetStatus and the three RPCs
-  // below are exempt from enforcement.
+  // crashed client cannot hold the lock forever. Exempt from enforcement:
+  // GetStatus, the read-only console observers (StreamConsole, ReadConsoleLog)
+  // so anyone can watch, and the three session RPCs below.
 
   // StartSession acquires the exclusive lock. If another session holds it, this
   // blocks until the lock is free, the wait_timeout elapses, or the caller's

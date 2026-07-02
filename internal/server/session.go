@@ -19,12 +19,17 @@ import (
 const SessionMetadataKey = "unwedge-session-id"
 
 // sessionExemptMethods are not gated by the hardware lock: status (so the lock
-// is always observable) and the session-management RPCs themselves.
+// is always observable), the read-only console observers (so anyone can watch
+// what the lock holder is doing), and the session-management RPCs themselves.
+// Writing to the console, driving U-Boot, power, images, and SSH all require the
+// lock.
 var sessionExemptMethods = map[string]bool{
-	unwedgev1.Unwedge_GetStatus_FullMethodName:     true,
-	unwedgev1.Unwedge_StartSession_FullMethodName:  true,
-	unwedgev1.Unwedge_FinishSession_FullMethodName: true,
-	unwedgev1.Unwedge_Ping_FullMethodName:          true,
+	unwedgev1.Unwedge_GetStatus_FullMethodName:      true,
+	unwedgev1.Unwedge_StreamConsole_FullMethodName:  true,
+	unwedgev1.Unwedge_ReadConsoleLog_FullMethodName: true,
+	unwedgev1.Unwedge_StartSession_FullMethodName:   true,
+	unwedgev1.Unwedge_FinishSession_FullMethodName:  true,
+	unwedgev1.Unwedge_Ping_FullMethodName:           true,
 }
 
 func sessionIDFromContext(ctx context.Context) string {

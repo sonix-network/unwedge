@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"context"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -14,15 +15,27 @@ import (
 	unwedgev1 "github.com/sonix-network/unwedge/gen/unwedge/v1"
 	"github.com/sonix-network/unwedge/internal/client"
 	"github.com/sonix-network/unwedge/internal/power"
+	"github.com/sonix-network/unwedge/internal/serialconsole"
 	"github.com/sonix-network/unwedge/internal/server"
 	"github.com/sonix-network/unwedge/internal/session"
 )
 
+// nullConn is a serial transport that never produces data and swallows writes.
+type nullConn struct{ done chan struct{} }
+
+func newNullConn() *nullConn                    { return &nullConn{done: make(chan struct{})} }
+func (c *nullConn) Read(p []byte) (int, error)  { <-c.done; return 0, io.EOF }
+func (c *nullConn) Write(p []byte) (int, error) { return len(p), nil }
+func (c *nullConn) Close() error                { close(c.done); return nil }
+
 func startLocked(t *testing.T, ttl time.Duration) func() *client.Client {
 	t.Helper()
 	mgr := session.NewManager(ttl)
+	con := serialconsole.New(newNullConn(), 4096)
+	t.Cleanup(func() { con.Close() })
 	svc := server.New(server.Deps{
 		Version:  "t",
+		Console:  con,
 		Power:    power.NewFake(power.StateOn),
 		Sessions: mgr,
 	})
@@ -154,6 +167,30 @@ func TestBlockingAcquireWakesOnRelease(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("b.Acquire did not wake after release")
+	}
+}
+
+func TestConsoleReadIsLockFree(t *testing.T) {
+	dial := startLocked(t, time.Minute)
+	ctx := context.Background()
+	holder, observer := dial(), dial()
+
+	if _, err := holder.Acquire(ctx, "holder", -1); err != nil {
+		t.Fatalf("holder.Acquire: %v", err)
+	}
+	// An observer without a session can read/stream the console while the lock
+	// is held by someone else.
+	if _, err := observer.API.ReadConsoleLog(ctx, &unwedgev1.ReadConsoleLogRequest{}); err != nil {
+		t.Fatalf("ReadConsoleLog should be lock-free: %v", err)
+	}
+	stream, err := observer.API.StreamConsole(ctx, &unwedgev1.StreamConsoleRequest{})
+	if err != nil {
+		t.Fatalf("StreamConsole open should be lock-free: %v", err)
+	}
+	_ = stream
+	// But writing to the console still requires the lock.
+	if _, err := observer.API.WriteConsole(ctx, &unwedgev1.WriteConsoleRequest{Data: []byte("x")}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("WriteConsole without lock should be refused, got %v", err)
 	}
 }
 

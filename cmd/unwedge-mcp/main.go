@@ -62,7 +62,12 @@ func run() error {
 	// use, auto-refresh via each call (server-side), and re-acquire if the lock
 	// was lost (e.g. it expired after >TTL idle). Introspection and the explicit
 	// lock tools are exempt. No background keepalive, so an idle agent releases.
-	lockExempt := map[string]bool{"get_status": true, "acquire_lock": true, "release_lock": true}
+	// Read-only tools observe without the lock (matching the server's exempt
+	// RPCs), so watchers don't lock out the driver.
+	lockExempt := map[string]bool{
+		"get_status": true, "read_console_log": true,
+		"acquire_lock": true, "release_lock": true,
+	}
 	srv.Use(func(name string, next mcp.ToolHandler) mcp.ToolHandler {
 		if lockExempt[name] {
 			return next

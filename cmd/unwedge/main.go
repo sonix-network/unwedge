@@ -115,10 +115,11 @@ func realMain() int {
 		verify: *subVerify, powerCycle: *subPowerCycle, timeout: *subTimeout,
 	}
 
-	// Acquire the exclusive hardware lock for operational commands (status is
-	// exempt and observes the lock without holding it). Held for the whole
-	// command and released on exit; a background ping keeps it alive meanwhile.
-	if !*noSession && cmd != "status" {
+	// Acquire the exclusive hardware lock for operational commands. Read-only
+	// observation (status, and console/log streaming) is lock-free so watchers
+	// don't lock out the driver. Held for the whole command and released on
+	// exit; a background ping keeps it alive meanwhile.
+	if !*noSession && !lockFreeCommands[cmd] {
 		release, err := maybeAcquire(ctx, cl, ownerLabel(*sessionOwner), *sessionWait)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
@@ -132,6 +133,14 @@ func realMain() int {
 		return 1
 	}
 	return 0
+}
+
+// lockFreeCommands are read-only and do not acquire the hardware lock, matching
+// the server-side session-exempt RPCs (GetStatus, StreamConsole, ReadConsoleLog).
+var lockFreeCommands = map[string]bool{
+	"status":  true,
+	"console": true,
+	"log":     true,
 }
 
 type cmdOpts struct {

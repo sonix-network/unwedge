@@ -90,8 +90,10 @@ The `write` command sends control keys too:
 ## Session locking (multiple agents, one unit)
 
 The hardware is single-user. When session locking is enabled (default), a client
-must hold an exclusive **session** to run any operational RPC; `GetStatus` is
-exempt so the lock is always observable. `StartSession` blocks until the lock is
+must hold an exclusive **session** to run any operational RPC. Read-only
+observation is lock-free — `GetStatus` (so the lock is always visible) and the
+console readers (`StreamConsole`, `ReadConsoleLog`) so anyone can watch what the
+holder is doing without locking them out. `StartSession` blocks until the lock is
 free, every call refreshes the holder's TTL, and an idle session auto-releases
 after `session.ttl` (default 5m) so a crashed client can't hold the unit forever.
 The session ID rides in gRPC metadata (`unwedge-session-id`) via client/server
