@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"path"
+	"strings"
 
 	"github.com/pin/tftp/v3"
 )
@@ -32,12 +34,16 @@ func NewServer(store *Store, addr string, logger *slog.Logger) *Server {
 
 // readHandler streams a requested image to the client.
 func (s *Server) readHandler(filename string, rf io.ReaderFrom) error {
-	path, err := s.store.Path(filename)
+	// TFTP clients (notably U-Boot, which requests "$serverip:/image.bin") send
+	// a leading slash and sometimes a directory prefix. Serve by basename like a
+	// standard tftpd; Store.Path still rejects "."/".." and other junk.
+	name := path.Base(strings.TrimSpace(filename))
+	fpath, err := s.store.Path(name)
 	if err != nil {
 		s.logger.Warn("tftp rejected request", "file", filename, "err", err)
 		return err
 	}
-	f, err := os.Open(path)
+	f, err := os.Open(fpath)
 	if err != nil {
 		s.logger.Warn("tftp file open failed", "file", filename, "err", err)
 		return fmt.Errorf("open %s: %w", filename, err)

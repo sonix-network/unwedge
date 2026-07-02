@@ -76,7 +76,7 @@ unwedge status
 unwedge console                       # live serial (Ctrl-C to stop)
 unwedge power cycle
 unwedge image upload openwrt-…-initramfs-kernel.bin
-unwedge netboot openwrt-…-initramfs-kernel.bin --verify
+unwedge netboot --verify openwrt-…-initramfs-kernel.bin
 unwedge uboot 'printenv'
 unwedge ssh 'uname -a'
 

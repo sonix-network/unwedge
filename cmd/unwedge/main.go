@@ -86,9 +86,27 @@ func realMain() int {
 	defer cl.Close()
 
 	cmd, rest := args[0], args[1:]
+
+	// Re-parse the remaining args with a per-command flag set so operation flags
+	// may follow the subcommand (e.g. `unwedge write --keys enter`). Defaults are
+	// seeded from the global flags, so placing them before the subcommand still
+	// works too. Note: like all Go flag parsing, flags must precede positional
+	// arguments (`unwedge netboot --verify <image>`, not `... <image> --verify`).
+	sub := flag.NewFlagSet(cmd, flag.ContinueOnError)
+	sub.SetOutput(os.Stderr)
+	subKeys := sub.String("keys", *keys, "comma-separated control keys for 'write' (e.g. ctrl-x,enter)")
+	subOut := sub.String("out", *out, "output file for 'smoke' boot log (default stdout)")
+	subKernelArgs := sub.String("kernel-args", *kernelArgs, "extra kernel args for netboot/smoke")
+	subVerify := sub.Bool("verify", *verify, "verify image CRC32 in U-Boot before booting")
+	subPowerCycle := sub.Bool("power-cycle", *powerCycle, "power-cycle before netboot/interrupt")
+	subTimeout := sub.Duration("timeout", *timeout, "overall timeout for the command")
+	if err := sub.Parse(rest); err != nil {
+		return 2
+	}
+	rest = sub.Args()
 	opts := cmdOpts{
-		keys: *keys, out: *out, kernelArgs: *kernelArgs,
-		verify: *verify, powerCycle: *powerCycle, timeout: *timeout,
+		keys: *subKeys, out: *subOut, kernelArgs: *subKernelArgs,
+		verify: *subVerify, powerCycle: *subPowerCycle, timeout: *subTimeout,
 	}
 	if err := dispatch(ctx, cl, cmd, rest, opts); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)

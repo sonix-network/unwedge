@@ -38,16 +38,21 @@ func TestServerRoundTrip(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 	c.SetTimeout(2 * time.Second)
-	wt, err := c.Receive("vmlinux.bin", "octet")
-	if err != nil {
-		t.Fatalf("Receive: %v", err)
-	}
-	var got bytes.Buffer
-	if _, err := wt.WriteTo(&got); err != nil {
-		t.Fatalf("WriteTo: %v", err)
-	}
-	if !bytes.Equal(got.Bytes(), want) {
-		t.Fatalf("fetched %d bytes, want %d", got.Len(), len(want))
+
+	// Fetch both as a plain name and with a leading slash, as U-Boot sends
+	// ("$serverip:/image.bin"). Both must serve the same bytes.
+	for _, reqName := range []string{"vmlinux.bin", "/vmlinux.bin"} {
+		wt, err := c.Receive(reqName, "octet")
+		if err != nil {
+			t.Fatalf("Receive(%q): %v", reqName, err)
+		}
+		var got bytes.Buffer
+		if _, err := wt.WriteTo(&got); err != nil {
+			t.Fatalf("WriteTo(%q): %v", reqName, err)
+		}
+		if !bytes.Equal(got.Bytes(), want) {
+			t.Fatalf("fetch %q: got %d bytes, want %d", reqName, got.Len(), len(want))
+		}
 	}
 }
 
@@ -59,8 +64,9 @@ func TestServerRejectsMissingAndTraversal(t *testing.T) {
 	if err := srv.readHandler("nope.bin", nopReaderFrom{}); err == nil {
 		t.Fatal("expected error for missing file")
 	}
-	// Traversal should error before touching the filesystem.
-	if err := srv.readHandler("../etc/passwd", nopReaderFrom{}); err == nil {
+	// Traversal is neutralized to a basename, which then does not exist -> error.
+	// (The important property: it cannot escape the store directory.)
+	if err := srv.readHandler("../../etc/passwd", nopReaderFrom{}); err == nil {
 		t.Fatal("expected error for traversal")
 	}
 }
