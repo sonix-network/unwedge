@@ -99,6 +99,13 @@ func (m *Manager) expireIfIdleLocked() {
 func (m *Manager) clearLocked() {
 	m.id = ""
 	m.owner = ""
+	// activeCalls is a Manager-global counter tied to the holder id. If the lock
+	// is cleared while a call is in flight (e.g. FinishSession from a killed
+	// client races a still-tearing-down RPC), the eventual CallEnd carries the
+	// old id and is skipped, so its decrement would otherwise leak into the next
+	// session and pin activeCalls > 0 forever, wedging the reaper. Reset it here
+	// so a new session always starts with a clean count. See issue #5.
+	m.activeCalls = 0
 	if m.released != nil {
 		close(m.released)
 		m.released = nil
@@ -137,6 +144,7 @@ func (m *Manager) Acquire(ctx context.Context, owner string, wait time.Duration)
 			m.owner = owner
 			m.startedAt = m.now()
 			m.lastActivity = m.now()
+			m.activeCalls = 0 // invariant: a fresh session starts with no in-flight calls
 			m.released = make(chan struct{})
 			info := m.infoLocked()
 			m.mu.Unlock()
