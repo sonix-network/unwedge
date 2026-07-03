@@ -37,7 +37,7 @@ Commands:
   write <text>                 send text to the console (use -keys for control keys)
   power <on|off|cycle|status>  control the PDU outlet
   interrupt                    power-cycle and stop at the U-Boot prompt
-  uboot <command>              run a single U-Boot command
+  uboot <command>              run a single U-Boot command (power-cycles first by default)
   netboot <image>              netboot an image already in the store
   image ls                     list images in the TFTP store
   image upload <file>          upload an image to the store
@@ -130,7 +130,7 @@ func realMain() int {
 	subOut := sub.String("out", *out, "output file for 'smoke' boot log (default stdout)")
 	subKernelArgs := sub.String("kernel-args", *kernelArgs, "extra kernel args for netboot/smoke")
 	subVerify := sub.Bool("verify", *verify, "verify image CRC32 in U-Boot before booting")
-	subPowerCycle := sub.Bool("power-cycle", *powerCycle, "power-cycle before netboot/interrupt")
+	subPowerCycle := sub.Bool("power-cycle", *powerCycle, "power-cycle and stop at the U-Boot prompt before netboot/interrupt/uboot")
 	subTimeout := sub.Duration("timeout", *timeout, "overall timeout for the command")
 	subProxy := sub.Bool("W", false, "'ssh' proxy mode: pipe stdin/stdout to the target's SSH port (ProxyCommand)")
 	subHost := sub.String("host", "", "override the target host (host[:port]) for 'ssh'/'scp'")
@@ -315,7 +315,24 @@ func cmdUboot(ctx context.Context, cl *client.Client, args []string, o cmdOpts) 
 	if len(args) == 0 {
 		return fmt.Errorf("uboot requires a command")
 	}
-	resp, err := cl.API.RunUbootCommand(ctx, &unwedgev1.RunUbootCommandRequest{
+	cctx, cancel := context.WithTimeout(ctx, o.timeout)
+	defer cancel()
+
+	// With power-cycle (the default), first reuse the exact interrupt path
+	// (power-cycle, catch the autoboot prompt, stop at the U-Boot prompt) before
+	// running the command. Firing the command blindly misses the vEdge's very
+	// short autoboot window and lets the board boot into the OS (issue #9).
+	if o.powerCycle {
+		// Route the interrupt phase's boot console to stderr so stdout carries
+		// only the command's own output (e.g. `unwedge uboot printenv > env`).
+		if err := cl.InterruptBoot(cctx, &unwedgev1.InterruptBootRequest{
+			PowerCycle: true, TimeoutMs: o.timeout.Milliseconds(),
+		}, bootEventTo(os.Stderr)); err != nil {
+			return err
+		}
+	}
+
+	resp, err := cl.API.RunUbootCommand(cctx, &unwedgev1.RunUbootCommandRequest{
 		Command: strings.Join(args, " "), TimeoutMs: o.timeout.Milliseconds(),
 	})
 	if err != nil {
@@ -472,19 +489,27 @@ func cmdSmoke(ctx context.Context, cl *client.Client, args []string, o cmdOpts) 
 	return nil
 }
 
-func printBootEvent(ev *unwedgev1.BootEvent) {
-	switch ev.Kind {
-	case unwedgev1.BootEvent_KIND_CONSOLE:
-		os.Stdout.Write(ev.GetConsole())
-	case unwedgev1.BootEvent_KIND_STAGE:
-		fmt.Fprintf(os.Stderr, "== %s: %s\n", ev.Stage, ev.Message)
-	case unwedgev1.BootEvent_KIND_ERROR:
-		fmt.Fprintf(os.Stderr, "!! error: %s\n", ev.Message)
-	case unwedgev1.BootEvent_KIND_SUCCESS:
-		fmt.Fprintf(os.Stderr, "** %s\n", ev.Message)
-	default:
-		if ev.Message != "" {
-			fmt.Fprintf(os.Stderr, "-- %s\n", ev.Message)
+// printBootEvent streams boot console output to stdout and progress to stderr.
+func printBootEvent(ev *unwedgev1.BootEvent) { bootEventTo(os.Stdout)(ev) }
+
+// bootEventTo returns a BootEventHandler that writes console output to consoleW
+// and progress lines (stage/error/success/info) to stderr. Callers that need
+// stdout kept clean for a command's own output pass os.Stderr as consoleW.
+func bootEventTo(consoleW io.Writer) client.BootEventHandler {
+	return func(ev *unwedgev1.BootEvent) {
+		switch ev.Kind {
+		case unwedgev1.BootEvent_KIND_CONSOLE:
+			consoleW.Write(ev.GetConsole())
+		case unwedgev1.BootEvent_KIND_STAGE:
+			fmt.Fprintf(os.Stderr, "== %s: %s\n", ev.Stage, ev.Message)
+		case unwedgev1.BootEvent_KIND_ERROR:
+			fmt.Fprintf(os.Stderr, "!! error: %s\n", ev.Message)
+		case unwedgev1.BootEvent_KIND_SUCCESS:
+			fmt.Fprintf(os.Stderr, "** %s\n", ev.Message)
+		default:
+			if ev.Message != "" {
+				fmt.Fprintf(os.Stderr, "-- %s\n", ev.Message)
+			}
 		}
 	}
 }
