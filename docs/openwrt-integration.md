@@ -97,6 +97,16 @@ client certs to trusted CI.
 4. Generate TLS certs (see `scripts/gen-certs.sh`) and start `unwedged`
    (a procd init script is provided in `init/unwedged`).
 
+To drive **several devices from one controller**, create one config file per
+device (`/etc/unwedge/dut1.yaml`, `dut2.yaml`, …) instead of a single
+`config.yaml` — each with its own `grpc.address` port, `serial.device`,
+`power.outlet`, and `ssh.host`. Exactly one shares the TFTP server on `:69`
+(`tftp.enabled: true`) while the rest set `tftp.enabled: false` and point at the
+same `tftp.dir`. The init script starts/stops each instance by its filename stem
+(`/etc/init.d/unwedged restart dut1`), and a wildcard/multi-name server cert plus
+per-device SRV records let clients reach each by name. See **Several devices on
+one controller** in the README for the full walkthrough.
+
 ## Notes / current limitations
 
 - The DUT's MAC is not statically settable in hardware, so its DHCP lease/IP may

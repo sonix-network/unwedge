@@ -3,25 +3,68 @@
 # drives the device-under-test). Install to /etc/init.d/unwedged, then:
 #   /etc/init.d/unwedged enable
 #   /etc/init.d/unwedged start
+#
+# Multi-instance: one unwedged process per device, configured by its own file
+# under /etc/unwedge/*.yaml (e.g. dut1.yaml, dut2.yaml). Each file becomes a
+# named procd instance after its filename stem, so you can drive them the way
+# systemd's unwedged@dut1 would:
+#   /etc/init.d/unwedged start            # start every instance
+#   /etc/init.d/unwedged start   dut1     # start just dut1 (others untouched)
+#   /etc/init.d/unwedged stop    dut1     # stop just dut1
+#   /etc/init.d/unwedged restart dut1     # restart just dut1
+# A single legacy /etc/unwedge/config.yaml keeps working (instance "config").
+#
+# The per-instance start/stop is safe because rc.common switches procd from
+# reconcile ("set") to merge ("add") mode when an instance name is passed, so
+# starting one instance never reaps the others.
 
 START=95
 STOP=10
 USE_PROCD=1
 
 PROG=/usr/bin/unwedged
-CONF=/etc/unwedge/config.yaml
+CONF_DIR=/etc/unwedge
 
-start_service() {
-	procd_open_instance
-	procd_set_param command "$PROG" -config "$CONF"
+# add_instance registers one procd instance for a config file.
+add_instance() {
+	local name="$1" conf="$2"
+	procd_open_instance "$name"
+	procd_set_param command "$PROG" -config "$conf"
+	# Restart the instance when its config file changes.
+	procd_set_param file "$conf"
 	procd_set_param respawn
 	procd_set_param stdout 1
 	procd_set_param stderr 1
-	# The TFTP server binds UDP/69; grant the capability instead of running as root.
+	# The TFTP server binds UDP/69; grant the capability instead of running as
+	# root. Only the TFTP-owning instance uses it, but it is harmless elsewhere.
 	procd_set_param capabilities net_bind_service
 	procd_close_instance
 }
 
+# start_service declares instances. With no argument it declares all of them
+# (bare `start`/boot reconciles the full set); with an instance name it declares
+# only that one, and procd's merge mode leaves the others running.
+start_service() {
+	local want="$1"
+	local conf name found=0
+	for conf in "$CONF_DIR"/*.yaml; do
+		[ -f "$conf" ] || continue
+		name="${conf##*/}"; name="${name%.yaml}"
+		[ -n "$want" ] && [ "$name" != "$want" ] && continue
+		add_instance "$name" "$conf"
+		found=1
+	done
+	if [ "$found" = 0 ]; then
+		if [ -n "$want" ]; then
+			echo "unwedged: no config $CONF_DIR/$want.yaml" >&2
+		else
+			echo "unwedged: no configs in $CONF_DIR/*.yaml" >&2
+		fi
+	fi
+}
+
+# reload_service forwards the instance name so `reload [name]` is per-instance
+# instead of degrading to a full-set reconcile.
 reload_service() {
-	restart
+	restart "$@"
 }
