@@ -2,6 +2,14 @@
 # Copy to /etc/unwedge/config.yaml and adjust. All durations accept Go syntax
 # (e.g. "5s", "500ms", "2m").
 
+# name identifies this instance when one controller drives several targets
+# (run one unwedged per device, each with its own config file, e.g.
+# /etc/unwedge/dut1.yaml). It namespaces uploaded images in a shared TFTP
+# directory so concurrent targets don't collide, and labels log lines. When
+# unset it defaults to the config filename ("dut1.yaml" -> "dut1"); the
+# conventional single-instance "config.yaml" defaults to "" (no namespacing).
+# name: dut1
+
 serial:
   # FTDI USB-serial adapter wired to the vEdge 1000 console (RJ45 / TTL / USB-B).
   device: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_ST163104-if00-port0

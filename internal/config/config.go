@@ -4,6 +4,9 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -11,6 +14,12 @@ import (
 
 // Config is the top-level daemon configuration.
 type Config struct {
+	// Name identifies this instance when several unwedged processes share one
+	// controller (one per device-under-test). It namespaces images in a shared
+	// TFTP directory and labels logs. When unset it defaults to the config
+	// filename ("dut1.yaml" -> "dut1"); the conventional single-instance file
+	// "config.yaml" defaults to "" (no namespacing) for backward compatibility.
+	Name    string        `yaml:"name"`
 	Serial  SerialConfig  `yaml:"serial"`
 	Power   PowerConfig   `yaml:"power"`
 	UBoot   UBootConfig   `yaml:"uboot"`
@@ -162,10 +171,26 @@ func Load(path string) (Config, error) {
 	if err := yaml.Unmarshal(b, &cfg); err != nil {
 		return Config{}, fmt.Errorf("config: parse %s: %w", path, err)
 	}
+	if cfg.Name == "" {
+		cfg.Name = defaultInstanceName(path)
+	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+// defaultInstanceName derives the instance name from the config filename, e.g.
+// "/etc/unwedge/dut1.yaml" -> "dut1". The conventional single-instance file
+// "config.yaml" yields "" so an upgraded single-instance controller keeps its
+// existing (un-namespaced) on-disk image layout.
+func defaultInstanceName(path string) string {
+	base := filepath.Base(path)
+	name := strings.TrimSuffix(base, filepath.Ext(base))
+	if name == "config" {
+		return ""
+	}
+	return name
 }
 
 // TFTPEnabled reports whether the TFTP server should run.
@@ -174,8 +199,16 @@ func (c *Config) TFTPEnabled() bool { return c.TFTP.Enabled == nil || *c.TFTP.En
 // TLSEnabled reports whether TLS should be used.
 func (c *Config) TLSEnabled() bool { return c.GRPC.TLS.Enabled == nil || *c.GRPC.TLS.Enabled }
 
+// instanceNameRe restricts instance names to a filename-safe set so they can be
+// used verbatim as an image-name prefix without escaping. "--" is disallowed
+// because it is the prefix separator (see tftp.Store namespacing).
+var instanceNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
 // Validate checks for internally inconsistent or missing required values.
 func (c *Config) Validate() error {
+	if c.Name != "" && (!instanceNameRe.MatchString(c.Name) || strings.Contains(c.Name, "--")) {
+		return fmt.Errorf(`config: name %q is invalid (use letters, digits, '.', '_', '-'; no "--")`, c.Name)
+	}
 	if c.Serial.Device == "" {
 		return fmt.Errorf("config: serial.device is required")
 	}

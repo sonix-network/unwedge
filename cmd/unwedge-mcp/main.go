@@ -51,14 +51,22 @@ func run() error {
 	serverName := flag.String("server-name", def.ServerName, "override TLS server name")
 	insecure := flag.Bool("insecure", def.Insecure, "skip server cert verification (dev only)")
 	noTLS := flag.Bool("no-tls", def.NoTLS, "connect without TLS (local/testing only)")
+	noSRV := flag.Bool("no-srv", def.NoSRV, "disable SRV-record discovery; dial the address and default port directly")
 	sessionOwner := flag.String("session-owner", "", "hardware-lock owner label (default: unwedge-mcp@host)")
 	sessionWait := flag.Duration("session-wait", 10*time.Minute, "how long a tool call waits for the hardware lock if held")
 	flag.Parse()
-	*addr = clientconfig.EnsurePort(*addr, clientconfig.DefaultPort)
+	dialAddr, resolvedName, err := clientconfig.ResolveEndpoint(*addr, !*noSRV, nil)
+	if err != nil {
+		return err
+	}
+	sni := *serverName
+	if sni == "" {
+		sni = resolvedName
+	}
 
 	cl, err := client.Dial(client.Options{
-		Address: *addr, NoTLS: *noTLS, CAFile: *ca, CertFile: *cert, KeyFile: *key,
-		ServerName: *serverName, Insecure: *insecure,
+		Address: dialAddr, NoTLS: *noTLS, CAFile: *ca, CertFile: *cert, KeyFile: *key,
+		ServerName: sni, Insecure: *insecure,
 	})
 	if err != nil {
 		return err

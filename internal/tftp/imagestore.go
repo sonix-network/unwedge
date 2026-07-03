@@ -24,12 +24,19 @@ type Info struct {
 	SHA256  string // hex, populated by Save; empty in List for speed
 }
 
-// Store manages image files in a directory.
+// Store manages image files in a directory. A non-empty prefix namespaces the
+// store: client-facing names are stored on disk with the prefix prepended and
+// stripped again on the way out, so several unwedged instances can share one
+// image directory without their uploads colliding. The raw (prefix-less) store
+// is what the TFTP read server uses, so it serves files by their exact on-disk
+// basename regardless of which instance owns them.
 type Store struct {
-	dir string
+	dir    string
+	prefix string
 }
 
-// NewStore creates (if needed) and returns a Store rooted at dir.
+// NewStore creates (if needed) and returns a raw (un-namespaced) Store rooted at
+// dir. Use Namespaced to derive a per-instance view.
 func NewStore(dir string) (*Store, error) {
 	if dir == "" {
 		return nil, fmt.Errorf("tftp: image dir required")
@@ -38,6 +45,18 @@ func NewStore(dir string) (*Store, error) {
 		return nil, fmt.Errorf("tftp: create image dir: %w", err)
 	}
 	return &Store{dir: dir}, nil
+}
+
+// Namespaced returns a view of the store whose images are transparently
+// prefixed with the given instance name, keeping a shared image directory
+// collision-free across instances. An empty name returns an un-namespaced view
+// (equivalent to the raw store), preserving the legacy on-disk layout.
+func (s *Store) Namespaced(name string) *Store {
+	prefix := ""
+	if name != "" {
+		prefix = name + "--"
+	}
+	return &Store{dir: s.dir, prefix: prefix}
 }
 
 // Dir returns the store's directory.
@@ -52,13 +71,25 @@ func sanitize(name string) (string, error) {
 	return base, nil
 }
 
-// Path returns the absolute path for an image, validating the name.
+// OnDiskName returns the basename a client-facing image is stored under (with
+// this store's namespace prefix applied) — i.e. the filename U-Boot must request
+// over TFTP from the shared server.
+func (s *Store) OnDiskName(name string) (string, error) {
+	base, err := sanitize(name)
+	if err != nil {
+		return "", err
+	}
+	return s.prefix + base, nil
+}
+
+// Path returns the absolute path for a client-facing image, validating the name
+// and applying this store's namespace prefix.
 func (s *Store) Path(name string) (string, error) {
 	base, err := sanitize(name)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(s.dir, base), nil
+	return filepath.Join(s.dir, s.prefix+base), nil
 }
 
 // Save writes r to name, computing SHA-256 and CRC32 as it streams. If the file
@@ -119,16 +150,22 @@ func (s *Store) List() ([]Info, error) {
 	}
 	var out []Info
 	for _, e := range entries {
-		if e.IsDir() || strings.HasPrefix(e.Name(), ".upload-") {
+		phys := e.Name()
+		if e.IsDir() || strings.HasPrefix(phys, ".upload-") {
+			continue
+		}
+		// A namespaced view lists only its own images (prefix match), returning
+		// client-facing names with the prefix stripped. The raw store lists all.
+		if s.prefix != "" && !strings.HasPrefix(phys, s.prefix) {
 			continue
 		}
 		fi, err := e.Info()
 		if err != nil {
 			continue
 		}
-		crc, _ := s.crc32(e.Name())
+		crc, _ := s.crc32Physical(phys)
 		out = append(out, Info{
-			Name:    e.Name(),
+			Name:    strings.TrimPrefix(phys, s.prefix),
 			Size:    fi.Size(),
 			ModTime: fi.ModTime(),
 			CRC32:   crc,
@@ -138,13 +175,10 @@ func (s *Store) List() ([]Info, error) {
 	return out, nil
 }
 
-// crc32 computes the IEEE CRC32 of a stored image.
-func (s *Store) crc32(name string) (uint32, error) {
-	path, err := s.Path(name)
-	if err != nil {
-		return 0, err
-	}
-	f, err := os.Open(path)
+// crc32Physical computes the IEEE CRC32 of a stored image by its on-disk
+// basename (prefix already applied).
+func (s *Store) crc32Physical(physBase string) (uint32, error) {
+	f, err := os.Open(filepath.Join(s.dir, physBase))
 	if err != nil {
 		return 0, err
 	}

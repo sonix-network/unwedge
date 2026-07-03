@@ -8,6 +8,7 @@
 package clientconfig
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -16,12 +17,21 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 // DefaultPort is applied to an address that names a host but no port.
 const DefaultPort = "7777"
+
+// SRV service/proto for the unwedge daemon: a device is reached by looking up
+// _unwedge._tcp.<host>, so a controller can host several instances on distinct
+// ports without clients needing to know them.
+const (
+	SRVService = "unwedge"
+	SRVProto   = "tcp"
+)
 
 // File is the on-disk client config. Every field is optional; a missing file is
 // not an error unless it was named explicitly (via -config or UNWEDGE_CONFIG).
@@ -34,6 +44,7 @@ type File struct {
 	ServerName string `yaml:"server_name"` // override TLS server name
 	NoTLS      *bool  `yaml:"no_tls"`      // connect without TLS (local/testing)
 	Insecure   *bool  `yaml:"insecure"`    // skip server cert verification (dev)
+	NoSRV      *bool  `yaml:"no_srv"`      // disable SRV discovery; dial addr/default port
 }
 
 // Resolved holds the effective flag defaults after merging the config file with
@@ -48,6 +59,7 @@ type Resolved struct {
 	ServerName string
 	NoTLS      bool
 	Insecure   bool
+	NoSRV      bool
 	Path       string
 }
 
@@ -102,8 +114,59 @@ func Resolve(configFlag string) (Resolved, error) {
 		ServerName: firstNonEmpty(os.Getenv("UNWEDGE_SERVER_NAME"), f.ServerName),
 		NoTLS:      boolPref(os.Getenv("UNWEDGE_NO_TLS"), f.NoTLS, false),
 		Insecure:   boolPref(os.Getenv("UNWEDGE_INSECURE"), f.Insecure, false),
+		NoSRV:      boolPref(os.Getenv("UNWEDGE_NO_SRV"), f.NoSRV, false),
 		Path:       used,
 	}, nil
+}
+
+// SRVFunc resolves DNS SRV records. It matches the subset of
+// net.Resolver.LookupSRV used here and is injectable for tests.
+type SRVFunc func(service, proto, name string) (cname string, addrs []*net.SRV, err error)
+
+// ResolveEndpoint turns a user-facing daemon address into a concrete dial
+// target (host:port) and, when necessary, the TLS server name to verify against.
+//
+// If addr already carries a port it is dialed verbatim. If addr names a host
+// with no port and allowSRV is set, ResolveEndpoint looks up _unwedge._tcp.<host>
+// and dials the record's target:port. When that target host differs from <host>
+// it returns <host> as the server name, so TLS is still verified against the
+// name the user asked for rather than the SRV target (which plain DNS does not
+// authenticate; RFC 2782/6125). With no record — or when addr is an IP literal
+// or already has a port — it falls back to appending DefaultPort and returns an
+// empty server name (TLS then verifies against the dial host, as before).
+//
+// lookup is injectable for tests; pass nil to use the default resolver.
+func ResolveEndpoint(addr string, allowSRV bool, lookup SRVFunc) (target, serverName string, err error) {
+	if addr == "" {
+		return "", "", fmt.Errorf("clientconfig: empty address")
+	}
+	if _, _, err := net.SplitHostPort(addr); err == nil {
+		return addr, "", nil // explicit port: dial as-is
+	}
+	host := addr
+	if !allowSRV || net.ParseIP(host) != nil {
+		return EnsurePort(host, DefaultPort), "", nil
+	}
+	if lookup == nil {
+		lookup = defaultLookupSRV
+	}
+	_, addrs, lerr := lookup(SRVService, SRVProto, host)
+	if lerr != nil || len(addrs) == 0 {
+		return EnsurePort(host, DefaultPort), "", nil
+	}
+	rec := addrs[0] // net.LookupSRV returns records sorted by priority then weight
+	tgt := strings.TrimSuffix(rec.Target, ".")
+	sni := ""
+	if !strings.EqualFold(tgt, host) {
+		sni = host
+	}
+	return net.JoinHostPort(tgt, strconv.Itoa(int(rec.Port))), sni, nil
+}
+
+func defaultLookupSRV(service, proto, name string) (string, []*net.SRV, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return net.DefaultResolver.LookupSRV(ctx, service, proto, name)
 }
 
 // EnsurePort appends ":port" to addr when it names a host but no port, so a

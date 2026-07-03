@@ -69,6 +69,7 @@ func realMain() int {
 	serverName := fs.String("server-name", def.ServerName, "override TLS server name")
 	insecureSkip := fs.Bool("insecure", def.Insecure, "skip server certificate verification (dev only)")
 	noTLS := fs.Bool("no-tls", def.NoTLS, "connect without TLS (local/testing only)")
+	noSRV := fs.Bool("no-srv", def.NoSRV, "disable SRV-record discovery; dial the address and default port directly")
 	keys := fs.String("keys", "", "comma-separated control keys for 'write' (e.g. ctrl-x,enter)")
 	out := fs.String("out", "", "output file for 'smoke' boot log (default stdout)")
 	kernelArgs := fs.String("kernel-args", "", "extra kernel args for netboot/smoke")
@@ -86,7 +87,17 @@ func realMain() int {
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		return 2
 	}
-	*addr = clientconfig.EnsurePort(*addr, clientconfig.DefaultPort)
+	dialAddr, resolvedName, err := clientconfig.ResolveEndpoint(*addr, !*noSRV, nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		return 1
+	}
+	// Verify TLS against the queried device name when SRV redirected us to a
+	// different controller host; an explicit -server-name still wins.
+	sni := *serverName
+	if sni == "" {
+		sni = resolvedName
+	}
 	args := fs.Args()
 	if len(args) == 0 {
 		fs.Usage()
@@ -97,8 +108,8 @@ func realMain() int {
 	defer stop()
 
 	cl, err := client.Dial(client.Options{
-		Address: *addr, NoTLS: *noTLS, CAFile: *ca, CertFile: *cert, KeyFile: *key,
-		ServerName: *serverName, Insecure: *insecureSkip,
+		Address: dialAddr, NoTLS: *noTLS, CAFile: *ca, CertFile: *cert, KeyFile: *key,
+		ServerName: sni, Insecure: *insecureSkip,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)

@@ -98,18 +98,34 @@ precedence order **flag > environment > config file > built-in default**, so you
 can prime the common values once and keep just the subcommand on the command
 line. Point at a config file with `-config` or `UNWEDGE_CONFIG`; otherwise
 `~/.config/unwedge/config.yaml` is loaded when present (`$XDG_CONFIG_HOME` is
-honored). Paths may use `~`. The daemon port defaults to `7777`, so `addr` can
-omit it.
+honored). Paths may use `~`.
+
+When `addr` names a host with no port, the client looks up the DNS SRV record
+`_unwedge._tcp.<host>` and dials the target/port it advertises. This lets one
+controller host several devices on different ports while each is reached by a
+stable name — you address the *device*, not the port:
+
+```
+_unwedge._tcp.dut1.sonix.network.  IN SRV 0 0 7778 controller.sonix.network.
+_unwedge._tcp.dut2.sonix.network.  IN SRV 0 0 7779 controller.sonix.network.
+```
+
+TLS is still verified against the name you asked for (`dut1.sonix.network`), not
+the SRV target, so the server certificate must cover the device names (a
+wildcard such as `*.sonix.network` is convenient). If no SRV record exists the
+client falls back to the default port `7777`; an explicit `host:port`, an IP
+address, or `no_srv: true` skips the lookup entirely.
 
 ```yaml
 # ~/.config/unwedge/config.yaml
-addr: unwedge-oob-lab-sw1.sonix.network   # :7777 is implied
+addr: dut1.sonix.network   # SRV-resolved; or "host:7777" to dial directly
 ca:   ~/unwedge/ca.crt
 cert: ~/unwedge/unwedge-bastion.crt
 key:  ~/unwedge/unwedge-bastion.key
 # server_name: ""   # override TLS server name
 # no_tls: false     # connect without TLS (local/testing)
 # insecure: false   # skip server cert verification (dev only)
+# no_srv: false     # disable SRV discovery; dial addr/default port directly
 ```
 
 With that primed, the long invocation collapses to just `unwedge status`. The
