@@ -342,7 +342,16 @@ func (o *Orchestrator) Netboot(ctx context.Context, p NetbootParams, emit Emit) 
 
 	// Boot the kernel. bootoctlinux is terminal: the prompt will not return, so
 	// instead of RunCommand we send the command and wait for the kernel banner.
-	bootCmd := fmt.Sprintf("bootoctlinux $loadaddr coremask=%s endbootargs", o.cfg.CoreMask)
+	//
+	// panic=0 makes the kernel halt (and stay) on panic instead of rebooting.
+	// Without it, a panic — e.g. a bad/oversized initramfs failing to unpack —
+	// reboots the board, U-Boot autoboots whatever is in flash, and the netbooted
+	// image is silently replaced by the on-flash one. That turns a failed boot into
+	// a false "success" (the smoke test sees the flashed image come up cleanly).
+	// Keeping the panic on the console makes it visible and lets the smoke test's
+	// "Kernel panic" failure marker fire. Callers can override via KernelArgs, where
+	// a later panic= wins.
+	bootCmd := fmt.Sprintf("bootoctlinux $loadaddr coremask=%s endbootargs panic=0", o.cfg.CoreMask)
 	if strings.TrimSpace(p.KernelArgs) != "" {
 		bootCmd += " " + strings.TrimSpace(p.KernelArgs)
 	}
