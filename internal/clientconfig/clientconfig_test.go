@@ -1,6 +1,8 @@
 package clientconfig
 
 import (
+	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +14,7 @@ func clearEnv(t *testing.T) {
 	for _, k := range []string{
 		"UNWEDGE_CONFIG", "UNWEDGE_ADDR", "UNWEDGE_CA", "UNWEDGE_CERT",
 		"UNWEDGE_KEY", "UNWEDGE_SERVER_NAME", "UNWEDGE_NO_TLS", "UNWEDGE_INSECURE",
+		"UNWEDGE_NO_SRV",
 	} {
 		t.Setenv(k, "")
 		os.Unsetenv(k)
@@ -89,6 +92,62 @@ func TestEnsurePort(t *testing.T) {
 		if got := EnsurePort(in, "7777"); got != want {
 			t.Errorf("EnsurePort(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func srvRecord(target string, port uint16) SRVFunc {
+	return func(_, _, _ string) (string, []*net.SRV, error) {
+		return "", []*net.SRV{{Target: target, Port: port, Priority: 0, Weight: 0}}, nil
+	}
+}
+
+func TestResolveEndpoint(t *testing.T) {
+	called := false
+	countingNil := SRVFunc(func(_, _, _ string) (string, []*net.SRV, error) {
+		called = true
+		return "", nil, nil // no records
+	})
+	errLookup := SRVFunc(func(_, _, _ string) (string, []*net.SRV, error) {
+		return "", nil, errors.New("nxdomain")
+	})
+	mustNotCall := SRVFunc(func(_, _, _ string) (string, []*net.SRV, error) {
+		t.Error("SRV lookup must not run")
+		return "", nil, nil
+	})
+
+	tests := []struct {
+		name       string
+		addr       string
+		allowSRV   bool
+		lookup     SRVFunc
+		wantTarget string
+		wantSNI    string
+	}{
+		{"explicit port bypasses SRV", "dut1.lab:7778", true, mustNotCall, "dut1.lab:7778", ""},
+		{"IP literal skips SRV", "10.0.0.5", true, mustNotCall, "10.0.0.5:7777", ""},
+		{"disabled falls back to default port", "dut1.lab", false, mustNotCall, "dut1.lab:7777", ""},
+		{"SRV redirect to other host sets SNI", "dut1.lab", true, srvRecord("controller.lab.", 7778), "controller.lab:7778", "dut1.lab"},
+		{"SRV same host, different port, no SNI", "dut1.lab", true, srvRecord("dut1.lab.", 7999), "dut1.lab:7999", ""},
+		{"no record falls back to default port", "dut1.lab", true, countingNil, "dut1.lab:7777", ""},
+		{"lookup error falls back", "dut1.lab", true, errLookup, "dut1.lab:7777", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			target, sni, err := ResolveEndpoint(tc.addr, tc.allowSRV, tc.lookup)
+			if err != nil {
+				t.Fatalf("ResolveEndpoint: %v", err)
+			}
+			if target != tc.wantTarget || sni != tc.wantSNI {
+				t.Fatalf("got (%q, %q), want (%q, %q)", target, sni, tc.wantTarget, tc.wantSNI)
+			}
+		})
+	}
+	if !called {
+		t.Error("expected the no-record lookup to have been invoked")
+	}
+
+	if _, _, err := ResolveEndpoint("", true, mustNotCall); err == nil {
+		t.Error("expected error for empty address")
 	}
 }
 
