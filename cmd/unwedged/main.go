@@ -57,6 +57,14 @@ func run() error {
 		return err
 	}
 
+	// Tag every log line with the instance name so multiple instances sharing
+	// one controller's log stream stay attributable. Omitted when unnamed
+	// (single-instance) to keep the legacy log format unchanged.
+	if cfg.Name != "" {
+		logger = logger.With("instance", cfg.Name)
+		slog.SetDefault(logger)
+	}
+
 	// Serial console (required).
 	port, err := serialport.Open(cfg.Serial.Device, cfg.Serial.Baud)
 	if err != nil {
@@ -105,21 +113,30 @@ func run() error {
 		return fmt.Errorf("configure uboot: %w", err)
 	}
 
-	// Image store + TFTP server (optional).
+	// Image store + TFTP server. The store is created whenever an image
+	// directory is set, independent of whether this instance runs the TFTP
+	// server: on a shared-TFTP controller one instance serves UDP/69 while the
+	// others still accept uploads into the shared directory. The gRPC service
+	// uses a per-instance namespaced view (images stored under a name prefix)
+	// so concurrent DUTs never clobber each other; the TFTP read server uses the
+	// raw store so it serves every instance's files by their exact on-disk name.
 	var store *tftp.Store
 	var tftpSrv *tftp.Server
-	if cfg.TFTPEnabled() {
-		store, err = tftp.NewStore(cfg.TFTP.Dir)
+	if cfg.TFTP.Dir != "" {
+		rawStore, err := tftp.NewStore(cfg.TFTP.Dir)
 		if err != nil {
 			return fmt.Errorf("image store: %w", err)
 		}
-		tftpSrv = tftp.NewServer(store, cfg.TFTP.Address, logger)
-		go func() {
-			if err := tftpSrv.ListenAndServe(); err != nil {
-				logger.Error("tftp server stopped", "err", err)
-			}
-		}()
-		defer tftpSrv.Shutdown()
+		store = rawStore.Namespaced(cfg.Name)
+		if cfg.TFTPEnabled() {
+			tftpSrv = tftp.NewServer(rawStore, cfg.TFTP.Address, logger)
+			go func() {
+				if err := tftpSrv.ListenAndServe(); err != nil {
+					logger.Error("tftp server stopped", "err", err)
+				}
+			}()
+			defer tftpSrv.Shutdown()
+		}
 	}
 
 	// SSH client (optional).

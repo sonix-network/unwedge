@@ -255,6 +255,17 @@ func (s *Service) Netboot(req *unwedgev1.NetbootRequest, stream unwedgev1.Unwedg
 			return status.Errorf(codes.NotFound, "image %q not found for CRC verification", req.GetImage())
 		}
 	}
+	// U-Boot fetches over the shared TFTP server by on-disk basename, which
+	// carries this instance's namespace prefix; the client only ever sees the
+	// clean name. Translate here so a multi-instance controller's DUTs don't
+	// collide on identically-named uploads.
+	if s.deps.Store != nil {
+		onDisk, err := s.deps.Store.OnDiskName(req.GetImage())
+		if err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid image name %q: %v", req.GetImage(), err)
+		}
+		params.Image = onDisk
+	}
 	emit := streamEmitter(stream)
 	err := s.deps.Orchestrator.Netboot(stream.Context(), params, emit)
 	return finishBoot(stream, err)
