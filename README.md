@@ -53,6 +53,31 @@ Requires Go 1.24+. Regenerating the gRPC stubs (`make proto`) additionally needs
 `buf`, `protoc-gen-go`, and `protoc-gen-go-grpc` on `PATH`; the generated code in
 `gen/` is checked in, so normal builds don't need them.
 
+## Releasing
+
+Releases are cut by pushing a semver tag; GitHub Actions builds and publishes the
+artifacts. On a `vMAJOR.MINOR.PATCH` tag the `Release` workflow runs the tests,
+builds the deterministic per-arch tarballs via `make dist` — **mips64** (the
+big-endian vEdge 1000 controller), **amd64**, and **arm64** — and creates a
+GitHub Release with `unwedge-*-linux-*.tar.gz` and `SHA256SUMS` attached.
+
+```sh
+git tag v0.2.2
+git push origin v0.2.2          # → builds and publishes the release
+```
+
+It can also be run by hand without pushing a tag:
+
+```sh
+gh workflow run Release -f version=v0.2.2   # or Actions → Release → "Run workflow"
+```
+
+After the release is published, point the OpenWrt feed at it so the image build
+pulls the new binaries: in
+[sonix-network/openwrt-packages](https://github.com/sonix-network/openwrt-packages),
+edit `utils/unwedge/Makefile` — bump `PKG_VERSION`, reset `PKG_RELEASE:=1`, and
+update the three `PKG_HASH_*` from the release's `SHA256SUMS` — then open a PR.
+
 ## Configure & run the daemon
 
 ```sh
