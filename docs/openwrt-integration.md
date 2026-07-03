@@ -103,9 +103,10 @@ device (`/etc/unwedge/dut1.yaml`, `dut2.yaml`, …) instead of a single
 `power.outlet`, and `ssh.host`. Exactly one shares the TFTP server on `:69`
 (`tftp.enabled: true`) while the rest set `tftp.enabled: false` and point at the
 same `tftp.dir`. The init script starts/stops each instance by its filename stem
-(`/etc/init.d/unwedged restart dut1`), and a wildcard/multi-name server cert plus
-per-device SRV records let clients reach each by name. See **Several devices on
-one controller** in the README for the full walkthrough.
+(`/etc/init.d/unwedged restart dut1`), and a per-device server cert (or a
+wildcard/multi-name one) plus per-device SRV records let clients reach each by
+name. See **Several devices on one controller** in the README for the full
+walkthrough.
 
 ## Notes / current limitations
 

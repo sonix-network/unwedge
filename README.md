@@ -128,8 +128,17 @@ The procd init script drives instances the way systemd's `unwedged@dut1` would:
 
 Publish an SRV record per device (see the [CLI examples](#cli-examples)) so
 clients address each by name and never track ports. Because TLS is verified
-against the device name, issue the server cert for all of them at once — a
-wildcard is easiest:
+against the device name, give each instance a server cert valid for its name.
+Issue one per device under a shared CA (`NAME` names the key/cert per device):
+
+```sh
+NAME=dut1 scripts/gen-certs.sh dut1.lab   # ca + client on first run, then dut1.{crt,key}
+NAME=dut2 scripts/gen-certs.sh dut2.lab   # reuses the CA + client, adds dut2.{crt,key}
+```
+
+Point each instance's `grpc.tls.cert_file`/`key_file` at its own
+`dut<N>.{crt,key}`. If you'd rather use one cert for everything, a
+wildcard/multi-name cert works too:
 
 ```sh
 scripts/gen-certs.sh 'controller.lab,*.lab.example.com'
