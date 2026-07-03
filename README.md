@@ -91,6 +91,59 @@ and `enable` it. See `config.example.yaml` for every option; defaults match stoc
 vEdge 1000 U-Boot (prompt `=>`, interrupt on `Hit ctrl-x to stop booting`,
 `octmgmt0`, `loadaddr 0x20000000`, `coremask=f`).
 
+### Several devices on one controller
+
+Run one `unwedged` per device, each with its own config file in
+`/etc/unwedge/` — e.g. `dut1.yaml`, `dut2.yaml`. The filename stem is the
+instance `name` (used to namespace images and label logs), so you rarely set
+`name` explicitly. Give each instance:
+
+- a distinct `grpc.address` port (`:7778`, `:7779`, …),
+- its own `serial.device`, `power.outlet`, and `ssh.host`.
+
+**Shared TFTP.** U-Boot always fetches from UDP `:69`, which only one process
+can bind, so on a shared LAN exactly **one** instance runs the TFTP server and
+the rest disable it — all pointing at the *same* image directory:
+
+```yaml
+# dut1.yaml — the TFTP owner
+tftp: { enabled: true,  dir: /var/lib/unwedge/images, address: ":69" }
+# dut2.yaml — shares the same directory, no server of its own
+tftp: { enabled: false, dir: /var/lib/unwedge/images }
+```
+
+Uploads are still per-device: each instance stores its images under a
+`<name>--` prefix in the shared directory and points its DUT's U-Boot at the
+prefixed name, so two devices never clobber each other. (Stopping the TFTP-owner
+instance therefore disables netboot for all of them.)
+
+The procd init script drives instances the way systemd's `unwedged@dut1` would:
+
+```sh
+/etc/init.d/unwedged start          # start every /etc/unwedge/*.yaml
+/etc/init.d/unwedged start   dut1   # start just dut1 (others keep running)
+/etc/init.d/unwedged restart dut2   # restart just dut2
+/etc/init.d/unwedged stop    dut1   # stop just dut1
+```
+
+Publish an SRV record per device (see the [CLI examples](#cli-examples)) so
+clients address each by name and never track ports. Because TLS is verified
+against the device name, give each instance a server cert valid for its name.
+Issue one per device under a shared CA (`NAME` names the key/cert per device):
+
+```sh
+NAME=dut1 scripts/gen-certs.sh dut1.lab   # ca + client on first run, then dut1.{crt,key}
+NAME=dut2 scripts/gen-certs.sh dut2.lab   # reuses the CA + client, adds dut2.{crt,key}
+```
+
+Point each instance's `grpc.tls.cert_file`/`key_file` at its own
+`dut<N>.{crt,key}`. If you'd rather use one cert for everything, a
+wildcard/multi-name cert works too:
+
+```sh
+scripts/gen-certs.sh 'controller.lab,*.lab.example.com'
+```
+
 ## CLI examples
 
 The client reads its daemon address and TLS material from three layers, in
