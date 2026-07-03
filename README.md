@@ -143,12 +143,36 @@ unwedge netboot --verify openwrt-…-initramfs-kernel.bin
 unwedge uboot 'printenv'
 unwedge ssh 'uname -a'
 
+# Copy files to/from the target. Prefix the target-side path with ':'.
+unwedge scp ./initrd.cpio :/tmp/initrd.cpio    # upload
+unwedge scp :/proc/config.gz ./config.gz       # download
+
 # Release smoke test: upload, netboot, verify healthy boot, save the log.
 unwedge -out boot.log smoke openwrt-…-initramfs-kernel.bin
 ```
 
 The `write` command sends control keys too:
 `unwedge write --keys ctrl-x` interrupts U-Boot.
+
+### Reaching the target through the daemon (ProxyCommand)
+
+The daemon can reach the target even when your workstation cannot. `unwedge ssh
+-W` turns the CLI into a raw SSH proxy, so your local `ssh`/`scp`/`rsync` can
+tunnel to the target through the daemon (SSH auth stays end-to-end — the daemon
+only shuffles bytes):
+
+```sh
+ssh -o ProxyCommand="unwedge ssh -W" root@target
+scp -o ProxyCommand="unwedge ssh -W" file root@target:/tmp/
+```
+
+The built-in `unwedge scp` (above) is the credential-free alternative: it copies
+over the daemon's own SSH connection using the classic scp protocol (remote `scp
+-t`/`scp -f`), so it needs no local keys and no SFTP subsystem on the target.
+
+`unwedge ssh` and `unwedge scp` accept `--host host[:port]` to target a
+different host on the target's network, and `-W` accepts an optional `host:port`
+(e.g. OpenSSH's `%h:%p`) for the same purpose.
 
 ## Session locking (multiple agents, one unit)
 

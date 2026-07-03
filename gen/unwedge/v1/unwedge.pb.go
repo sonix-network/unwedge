@@ -1989,6 +1989,330 @@ func (x *SSHExecResponse) GetTimedOut() bool {
 	return false
 }
 
+// TunnelChunk carries raw bytes for a Tunnel stream. The first client message
+// may set host_override to pick the dial target (host or host:port on the
+// target's network); empty means the configured SSH host on port 22. It is
+// read only from the first message; data flows in both directions thereafter.
+type TunnelChunk struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	HostOverride  string                 `protobuf:"bytes,1,opt,name=host_override,json=hostOverride,proto3" json:"host_override,omitempty"`
+	Data          []byte                 `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TunnelChunk) Reset() {
+	*x = TunnelChunk{}
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TunnelChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TunnelChunk) ProtoMessage() {}
+
+func (x *TunnelChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TunnelChunk.ProtoReflect.Descriptor instead.
+func (*TunnelChunk) Descriptor() ([]byte, []int) {
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *TunnelChunk) GetHostOverride() string {
+	if x != nil {
+		return x.HostOverride
+	}
+	return ""
+}
+
+func (x *TunnelChunk) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+type SCPUploadRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Payload:
+	//
+	//	*SCPUploadRequest_Metadata_
+	//	*SCPUploadRequest_Chunk
+	Payload       isSCPUploadRequest_Payload `protobuf_oneof:"payload"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SCPUploadRequest) Reset() {
+	*x = SCPUploadRequest{}
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SCPUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SCPUploadRequest) ProtoMessage() {}
+
+func (x *SCPUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SCPUploadRequest.ProtoReflect.Descriptor instead.
+func (*SCPUploadRequest) Descriptor() ([]byte, []int) {
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *SCPUploadRequest) GetPayload() isSCPUploadRequest_Payload {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *SCPUploadRequest) GetMetadata() *SCPUploadRequest_Metadata {
+	if x != nil {
+		if x, ok := x.Payload.(*SCPUploadRequest_Metadata_); ok {
+			return x.Metadata
+		}
+	}
+	return nil
+}
+
+func (x *SCPUploadRequest) GetChunk() []byte {
+	if x != nil {
+		if x, ok := x.Payload.(*SCPUploadRequest_Chunk); ok {
+			return x.Chunk
+		}
+	}
+	return nil
+}
+
+type isSCPUploadRequest_Payload interface {
+	isSCPUploadRequest_Payload()
+}
+
+type SCPUploadRequest_Metadata_ struct {
+	Metadata *SCPUploadRequest_Metadata `protobuf:"bytes,1,opt,name=metadata,proto3,oneof"` // must be the first message
+}
+
+type SCPUploadRequest_Chunk struct {
+	Chunk []byte `protobuf:"bytes,2,opt,name=chunk,proto3,oneof"` // subsequent messages
+}
+
+func (*SCPUploadRequest_Metadata_) isSCPUploadRequest_Payload() {}
+
+func (*SCPUploadRequest_Chunk) isSCPUploadRequest_Payload() {}
+
+type SCPUploadResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	BytesWritten  int64                  `protobuf:"varint,1,opt,name=bytes_written,json=bytesWritten,proto3" json:"bytes_written,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SCPUploadResponse) Reset() {
+	*x = SCPUploadResponse{}
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SCPUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SCPUploadResponse) ProtoMessage() {}
+
+func (x *SCPUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SCPUploadResponse.ProtoReflect.Descriptor instead.
+func (*SCPUploadResponse) Descriptor() ([]byte, []int) {
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *SCPUploadResponse) GetBytesWritten() int64 {
+	if x != nil {
+		return x.BytesWritten
+	}
+	return 0
+}
+
+type SCPDownloadRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RemotePath    string                 `protobuf:"bytes,1,opt,name=remote_path,json=remotePath,proto3" json:"remote_path,omitempty"` // source path on the target
+	TimeoutMs     int64                  `protobuf:"varint,2,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
+	HostOverride  string                 `protobuf:"bytes,3,opt,name=host_override,json=hostOverride,proto3" json:"host_override,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SCPDownloadRequest) Reset() {
+	*x = SCPDownloadRequest{}
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SCPDownloadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SCPDownloadRequest) ProtoMessage() {}
+
+func (x *SCPDownloadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SCPDownloadRequest.ProtoReflect.Descriptor instead.
+func (*SCPDownloadRequest) Descriptor() ([]byte, []int) {
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *SCPDownloadRequest) GetRemotePath() string {
+	if x != nil {
+		return x.RemotePath
+	}
+	return ""
+}
+
+func (x *SCPDownloadRequest) GetTimeoutMs() int64 {
+	if x != nil {
+		return x.TimeoutMs
+	}
+	return 0
+}
+
+func (x *SCPDownloadRequest) GetHostOverride() string {
+	if x != nil {
+		return x.HostOverride
+	}
+	return ""
+}
+
+type SCPDownloadResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Payload:
+	//
+	//	*SCPDownloadResponse_Metadata_
+	//	*SCPDownloadResponse_Chunk
+	Payload       isSCPDownloadResponse_Payload `protobuf_oneof:"payload"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SCPDownloadResponse) Reset() {
+	*x = SCPDownloadResponse{}
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SCPDownloadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SCPDownloadResponse) ProtoMessage() {}
+
+func (x *SCPDownloadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SCPDownloadResponse.ProtoReflect.Descriptor instead.
+func (*SCPDownloadResponse) Descriptor() ([]byte, []int) {
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *SCPDownloadResponse) GetPayload() isSCPDownloadResponse_Payload {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *SCPDownloadResponse) GetMetadata() *SCPDownloadResponse_Metadata {
+	if x != nil {
+		if x, ok := x.Payload.(*SCPDownloadResponse_Metadata_); ok {
+			return x.Metadata
+		}
+	}
+	return nil
+}
+
+func (x *SCPDownloadResponse) GetChunk() []byte {
+	if x != nil {
+		if x, ok := x.Payload.(*SCPDownloadResponse_Chunk); ok {
+			return x.Chunk
+		}
+	}
+	return nil
+}
+
+type isSCPDownloadResponse_Payload interface {
+	isSCPDownloadResponse_Payload()
+}
+
+type SCPDownloadResponse_Metadata_ struct {
+	Metadata *SCPDownloadResponse_Metadata `protobuf:"bytes,1,opt,name=metadata,proto3,oneof"` // first message
+}
+
+type SCPDownloadResponse_Chunk struct {
+	Chunk []byte `protobuf:"bytes,2,opt,name=chunk,proto3,oneof"` // subsequent messages
+}
+
+func (*SCPDownloadResponse_Metadata_) isSCPDownloadResponse_Payload() {}
+
+func (*SCPDownloadResponse_Chunk) isSCPDownloadResponse_Payload() {}
+
 type UploadImageRequest_Metadata struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`            // filename to store as (basename only)
@@ -2000,7 +2324,7 @@ type UploadImageRequest_Metadata struct {
 
 func (x *UploadImageRequest_Metadata) Reset() {
 	*x = UploadImageRequest_Metadata{}
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[32]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2012,7 +2336,7 @@ func (x *UploadImageRequest_Metadata) String() string {
 func (*UploadImageRequest_Metadata) ProtoMessage() {}
 
 func (x *UploadImageRequest_Metadata) ProtoReflect() protoreflect.Message {
-	mi := &file_unwedge_v1_unwedge_proto_msgTypes[32]
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2047,6 +2371,143 @@ func (x *UploadImageRequest_Metadata) GetOverwrite() bool {
 		return x.Overwrite
 	}
 	return false
+}
+
+type SCPUploadRequest_Metadata struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Destination path on the target (file path, or a directory to drop into).
+	RemotePath    string `protobuf:"bytes,1,opt,name=remote_path,json=remotePath,proto3" json:"remote_path,omitempty"`
+	Size          int64  `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"` // exact number of file bytes that follow
+	Mode          uint32 `protobuf:"varint,3,opt,name=mode,proto3" json:"mode,omitempty"` // unix permission bits; 0 -> 0644
+	TimeoutMs     int64  `protobuf:"varint,4,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
+	HostOverride  string `protobuf:"bytes,5,opt,name=host_override,json=hostOverride,proto3" json:"host_override,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SCPUploadRequest_Metadata) Reset() {
+	*x = SCPUploadRequest_Metadata{}
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SCPUploadRequest_Metadata) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SCPUploadRequest_Metadata) ProtoMessage() {}
+
+func (x *SCPUploadRequest_Metadata) ProtoReflect() protoreflect.Message {
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SCPUploadRequest_Metadata.ProtoReflect.Descriptor instead.
+func (*SCPUploadRequest_Metadata) Descriptor() ([]byte, []int) {
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{33, 0}
+}
+
+func (x *SCPUploadRequest_Metadata) GetRemotePath() string {
+	if x != nil {
+		return x.RemotePath
+	}
+	return ""
+}
+
+func (x *SCPUploadRequest_Metadata) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *SCPUploadRequest_Metadata) GetMode() uint32 {
+	if x != nil {
+		return x.Mode
+	}
+	return 0
+}
+
+func (x *SCPUploadRequest_Metadata) GetTimeoutMs() int64 {
+	if x != nil {
+		return x.TimeoutMs
+	}
+	return 0
+}
+
+func (x *SCPUploadRequest_Metadata) GetHostOverride() string {
+	if x != nil {
+		return x.HostOverride
+	}
+	return ""
+}
+
+type SCPDownloadResponse_Metadata struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Size          int64                  `protobuf:"varint,1,opt,name=size,proto3" json:"size,omitempty"` // exact number of file bytes that follow
+	Mode          uint32                 `protobuf:"varint,2,opt,name=mode,proto3" json:"mode,omitempty"` // unix permission bits reported by the target
+	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`  // base name reported by the target
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SCPDownloadResponse_Metadata) Reset() {
+	*x = SCPDownloadResponse_Metadata{}
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SCPDownloadResponse_Metadata) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SCPDownloadResponse_Metadata) ProtoMessage() {}
+
+func (x *SCPDownloadResponse_Metadata) ProtoReflect() protoreflect.Message {
+	mi := &file_unwedge_v1_unwedge_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SCPDownloadResponse_Metadata.ProtoReflect.Descriptor instead.
+func (*SCPDownloadResponse_Metadata) Descriptor() ([]byte, []int) {
+	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{36, 0}
+}
+
+func (x *SCPDownloadResponse_Metadata) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *SCPDownloadResponse_Metadata) GetMode() uint32 {
+	if x != nil {
+		return x.Mode
+	}
+	return 0
+}
+
+func (x *SCPDownloadResponse_Metadata) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
 }
 
 var File_unwedge_v1_unwedge_proto protoreflect.FileDescriptor
@@ -2189,7 +2650,38 @@ const file_unwedge_v1_unwedge_proto_rawDesc = "" +
 	"\texit_code\x18\x01 \x01(\x05R\bexitCode\x12\x16\n" +
 	"\x06stdout\x18\x02 \x01(\fR\x06stdout\x12\x16\n" +
 	"\x06stderr\x18\x03 \x01(\fR\x06stderr\x12\x1b\n" +
-	"\ttimed_out\x18\x04 \x01(\bR\btimedOut*N\n" +
+	"\ttimed_out\x18\x04 \x01(\bR\btimedOut\"F\n" +
+	"\vTunnelChunk\x12#\n" +
+	"\rhost_override\x18\x01 \x01(\tR\fhostOverride\x12\x12\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data\"\x94\x02\n" +
+	"\x10SCPUploadRequest\x12C\n" +
+	"\bmetadata\x18\x01 \x01(\v2%.unwedge.v1.SCPUploadRequest.MetadataH\x00R\bmetadata\x12\x16\n" +
+	"\x05chunk\x18\x02 \x01(\fH\x00R\x05chunk\x1a\x97\x01\n" +
+	"\bMetadata\x12\x1f\n" +
+	"\vremote_path\x18\x01 \x01(\tR\n" +
+	"remotePath\x12\x12\n" +
+	"\x04size\x18\x02 \x01(\x03R\x04size\x12\x12\n" +
+	"\x04mode\x18\x03 \x01(\rR\x04mode\x12\x1d\n" +
+	"\n" +
+	"timeout_ms\x18\x04 \x01(\x03R\ttimeoutMs\x12#\n" +
+	"\rhost_override\x18\x05 \x01(\tR\fhostOverrideB\t\n" +
+	"\apayload\"8\n" +
+	"\x11SCPUploadResponse\x12#\n" +
+	"\rbytes_written\x18\x01 \x01(\x03R\fbytesWritten\"y\n" +
+	"\x12SCPDownloadRequest\x12\x1f\n" +
+	"\vremote_path\x18\x01 \x01(\tR\n" +
+	"remotePath\x12\x1d\n" +
+	"\n" +
+	"timeout_ms\x18\x02 \x01(\x03R\ttimeoutMs\x12#\n" +
+	"\rhost_override\x18\x03 \x01(\tR\fhostOverride\"\xc8\x01\n" +
+	"\x13SCPDownloadResponse\x12F\n" +
+	"\bmetadata\x18\x01 \x01(\v2(.unwedge.v1.SCPDownloadResponse.MetadataH\x00R\bmetadata\x12\x16\n" +
+	"\x05chunk\x18\x02 \x01(\fH\x00R\x05chunk\x1aF\n" +
+	"\bMetadata\x12\x12\n" +
+	"\x04size\x18\x01 \x01(\x03R\x04size\x12\x12\n" +
+	"\x04mode\x18\x02 \x01(\rR\x04mode\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04nameB\t\n" +
+	"\apayload*N\n" +
 	"\n" +
 	"PowerState\x12\x17\n" +
 	"\x13POWER_STATE_UNKNOWN\x10\x00\x12\x12\n" +
@@ -2200,7 +2692,7 @@ const file_unwedge_v1_unwedge_proto_rawDesc = "" +
 	"\x0fPOWER_ACTION_ON\x10\x01\x12\x14\n" +
 	"\x10POWER_ACTION_OFF\x10\x02\x12\x16\n" +
 	"\x12POWER_ACTION_CYCLE\x10\x03\x12\x17\n" +
-	"\x13POWER_ACTION_STATUS\x10\x042\xf9\t\n" +
+	"\x13POWER_ACTION_STATUS\x10\x042\xd7\v\n" +
 	"\aUnwedge\x12H\n" +
 	"\tGetStatus\x12\x1c.unwedge.v1.GetStatusRequest\x1a\x1d.unwedge.v1.GetStatusResponse\x12Q\n" +
 	"\fStartSession\x12\x1f.unwedge.v1.StartSessionRequest\x1a .unwedge.v1.StartSessionResponse\x12T\n" +
@@ -2218,7 +2710,10 @@ const file_unwedge_v1_unwedge_proto_rawDesc = "" +
 	"\n" +
 	"ListImages\x12\x1d.unwedge.v1.ListImagesRequest\x1a\x1e.unwedge.v1.ListImagesResponse\x12N\n" +
 	"\vDeleteImage\x12\x1e.unwedge.v1.DeleteImageRequest\x1a\x1f.unwedge.v1.DeleteImageResponse\x12B\n" +
-	"\aSSHExec\x12\x1a.unwedge.v1.SSHExecRequest\x1a\x1b.unwedge.v1.SSHExecResponseB\xa2\x01\n" +
+	"\aSSHExec\x12\x1a.unwedge.v1.SSHExecRequest\x1a\x1b.unwedge.v1.SSHExecResponse\x12>\n" +
+	"\x06Tunnel\x12\x17.unwedge.v1.TunnelChunk\x1a\x17.unwedge.v1.TunnelChunk(\x010\x01\x12J\n" +
+	"\tSCPUpload\x12\x1c.unwedge.v1.SCPUploadRequest\x1a\x1d.unwedge.v1.SCPUploadResponse(\x01\x12P\n" +
+	"\vSCPDownload\x12\x1e.unwedge.v1.SCPDownloadRequest\x1a\x1f.unwedge.v1.SCPDownloadResponse0\x01B\xa2\x01\n" +
 	"\x0ecom.unwedge.v1B\fUnwedgeProtoP\x01Z9github.com/sonix-network/unwedge/gen/unwedge/v1;unwedgev1\xa2\x02\x03UXX\xaa\x02\n" +
 	"Unwedge.V1\xca\x02\n" +
 	"Unwedge\\V1\xe2\x02\x16Unwedge\\V1\\GPBMetadata\xea\x02\vUnwedge::V1b\x06proto3"
@@ -2236,89 +2731,104 @@ func file_unwedge_v1_unwedge_proto_rawDescGZIP() []byte {
 }
 
 var file_unwedge_v1_unwedge_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_unwedge_v1_unwedge_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
+var file_unwedge_v1_unwedge_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
 var file_unwedge_v1_unwedge_proto_goTypes = []any{
-	(PowerState)(0),                     // 0: unwedge.v1.PowerState
-	(PowerAction)(0),                    // 1: unwedge.v1.PowerAction
-	(BootEvent_Kind)(0),                 // 2: unwedge.v1.BootEvent.Kind
-	(*GetStatusRequest)(nil),            // 3: unwedge.v1.GetStatusRequest
-	(*GetStatusResponse)(nil),           // 4: unwedge.v1.GetStatusResponse
-	(*StartSessionRequest)(nil),         // 5: unwedge.v1.StartSessionRequest
-	(*StartSessionResponse)(nil),        // 6: unwedge.v1.StartSessionResponse
-	(*FinishSessionRequest)(nil),        // 7: unwedge.v1.FinishSessionRequest
-	(*FinishSessionResponse)(nil),       // 8: unwedge.v1.FinishSessionResponse
-	(*PingRequest)(nil),                 // 9: unwedge.v1.PingRequest
-	(*PingResponse)(nil),                // 10: unwedge.v1.PingResponse
-	(*StreamConsoleRequest)(nil),        // 11: unwedge.v1.StreamConsoleRequest
-	(*ConsoleChunk)(nil),                // 12: unwedge.v1.ConsoleChunk
-	(*ReadConsoleLogRequest)(nil),       // 13: unwedge.v1.ReadConsoleLogRequest
-	(*ReadConsoleLogResponse)(nil),      // 14: unwedge.v1.ReadConsoleLogResponse
-	(*WriteConsoleRequest)(nil),         // 15: unwedge.v1.WriteConsoleRequest
-	(*WriteConsoleResponse)(nil),        // 16: unwedge.v1.WriteConsoleResponse
-	(*WaitForPatternRequest)(nil),       // 17: unwedge.v1.WaitForPatternRequest
-	(*WaitForPatternResponse)(nil),      // 18: unwedge.v1.WaitForPatternResponse
-	(*PowerControlRequest)(nil),         // 19: unwedge.v1.PowerControlRequest
-	(*PowerControlResponse)(nil),        // 20: unwedge.v1.PowerControlResponse
-	(*BootEvent)(nil),                   // 21: unwedge.v1.BootEvent
-	(*InterruptBootRequest)(nil),        // 22: unwedge.v1.InterruptBootRequest
-	(*NetbootRequest)(nil),              // 23: unwedge.v1.NetbootRequest
-	(*RunUbootCommandRequest)(nil),      // 24: unwedge.v1.RunUbootCommandRequest
-	(*RunUbootCommandResponse)(nil),     // 25: unwedge.v1.RunUbootCommandResponse
-	(*UploadImageRequest)(nil),          // 26: unwedge.v1.UploadImageRequest
-	(*UploadImageResponse)(nil),         // 27: unwedge.v1.UploadImageResponse
-	(*ListImagesRequest)(nil),           // 28: unwedge.v1.ListImagesRequest
-	(*ImageInfo)(nil),                   // 29: unwedge.v1.ImageInfo
-	(*ListImagesResponse)(nil),          // 30: unwedge.v1.ListImagesResponse
-	(*DeleteImageRequest)(nil),          // 31: unwedge.v1.DeleteImageRequest
-	(*DeleteImageResponse)(nil),         // 32: unwedge.v1.DeleteImageResponse
-	(*SSHExecRequest)(nil),              // 33: unwedge.v1.SSHExecRequest
-	(*SSHExecResponse)(nil),             // 34: unwedge.v1.SSHExecResponse
-	(*UploadImageRequest_Metadata)(nil), // 35: unwedge.v1.UploadImageRequest.Metadata
+	(PowerState)(0),                      // 0: unwedge.v1.PowerState
+	(PowerAction)(0),                     // 1: unwedge.v1.PowerAction
+	(BootEvent_Kind)(0),                  // 2: unwedge.v1.BootEvent.Kind
+	(*GetStatusRequest)(nil),             // 3: unwedge.v1.GetStatusRequest
+	(*GetStatusResponse)(nil),            // 4: unwedge.v1.GetStatusResponse
+	(*StartSessionRequest)(nil),          // 5: unwedge.v1.StartSessionRequest
+	(*StartSessionResponse)(nil),         // 6: unwedge.v1.StartSessionResponse
+	(*FinishSessionRequest)(nil),         // 7: unwedge.v1.FinishSessionRequest
+	(*FinishSessionResponse)(nil),        // 8: unwedge.v1.FinishSessionResponse
+	(*PingRequest)(nil),                  // 9: unwedge.v1.PingRequest
+	(*PingResponse)(nil),                 // 10: unwedge.v1.PingResponse
+	(*StreamConsoleRequest)(nil),         // 11: unwedge.v1.StreamConsoleRequest
+	(*ConsoleChunk)(nil),                 // 12: unwedge.v1.ConsoleChunk
+	(*ReadConsoleLogRequest)(nil),        // 13: unwedge.v1.ReadConsoleLogRequest
+	(*ReadConsoleLogResponse)(nil),       // 14: unwedge.v1.ReadConsoleLogResponse
+	(*WriteConsoleRequest)(nil),          // 15: unwedge.v1.WriteConsoleRequest
+	(*WriteConsoleResponse)(nil),         // 16: unwedge.v1.WriteConsoleResponse
+	(*WaitForPatternRequest)(nil),        // 17: unwedge.v1.WaitForPatternRequest
+	(*WaitForPatternResponse)(nil),       // 18: unwedge.v1.WaitForPatternResponse
+	(*PowerControlRequest)(nil),          // 19: unwedge.v1.PowerControlRequest
+	(*PowerControlResponse)(nil),         // 20: unwedge.v1.PowerControlResponse
+	(*BootEvent)(nil),                    // 21: unwedge.v1.BootEvent
+	(*InterruptBootRequest)(nil),         // 22: unwedge.v1.InterruptBootRequest
+	(*NetbootRequest)(nil),               // 23: unwedge.v1.NetbootRequest
+	(*RunUbootCommandRequest)(nil),       // 24: unwedge.v1.RunUbootCommandRequest
+	(*RunUbootCommandResponse)(nil),      // 25: unwedge.v1.RunUbootCommandResponse
+	(*UploadImageRequest)(nil),           // 26: unwedge.v1.UploadImageRequest
+	(*UploadImageResponse)(nil),          // 27: unwedge.v1.UploadImageResponse
+	(*ListImagesRequest)(nil),            // 28: unwedge.v1.ListImagesRequest
+	(*ImageInfo)(nil),                    // 29: unwedge.v1.ImageInfo
+	(*ListImagesResponse)(nil),           // 30: unwedge.v1.ListImagesResponse
+	(*DeleteImageRequest)(nil),           // 31: unwedge.v1.DeleteImageRequest
+	(*DeleteImageResponse)(nil),          // 32: unwedge.v1.DeleteImageResponse
+	(*SSHExecRequest)(nil),               // 33: unwedge.v1.SSHExecRequest
+	(*SSHExecResponse)(nil),              // 34: unwedge.v1.SSHExecResponse
+	(*TunnelChunk)(nil),                  // 35: unwedge.v1.TunnelChunk
+	(*SCPUploadRequest)(nil),             // 36: unwedge.v1.SCPUploadRequest
+	(*SCPUploadResponse)(nil),            // 37: unwedge.v1.SCPUploadResponse
+	(*SCPDownloadRequest)(nil),           // 38: unwedge.v1.SCPDownloadRequest
+	(*SCPDownloadResponse)(nil),          // 39: unwedge.v1.SCPDownloadResponse
+	(*UploadImageRequest_Metadata)(nil),  // 40: unwedge.v1.UploadImageRequest.Metadata
+	(*SCPUploadRequest_Metadata)(nil),    // 41: unwedge.v1.SCPUploadRequest.Metadata
+	(*SCPDownloadResponse_Metadata)(nil), // 42: unwedge.v1.SCPDownloadResponse.Metadata
 }
 var file_unwedge_v1_unwedge_proto_depIdxs = []int32{
 	0,  // 0: unwedge.v1.GetStatusResponse.power_state:type_name -> unwedge.v1.PowerState
 	1,  // 1: unwedge.v1.PowerControlRequest.action:type_name -> unwedge.v1.PowerAction
 	0,  // 2: unwedge.v1.PowerControlResponse.state:type_name -> unwedge.v1.PowerState
 	2,  // 3: unwedge.v1.BootEvent.kind:type_name -> unwedge.v1.BootEvent.Kind
-	35, // 4: unwedge.v1.UploadImageRequest.metadata:type_name -> unwedge.v1.UploadImageRequest.Metadata
+	40, // 4: unwedge.v1.UploadImageRequest.metadata:type_name -> unwedge.v1.UploadImageRequest.Metadata
 	29, // 5: unwedge.v1.ListImagesResponse.images:type_name -> unwedge.v1.ImageInfo
-	3,  // 6: unwedge.v1.Unwedge.GetStatus:input_type -> unwedge.v1.GetStatusRequest
-	5,  // 7: unwedge.v1.Unwedge.StartSession:input_type -> unwedge.v1.StartSessionRequest
-	7,  // 8: unwedge.v1.Unwedge.FinishSession:input_type -> unwedge.v1.FinishSessionRequest
-	9,  // 9: unwedge.v1.Unwedge.Ping:input_type -> unwedge.v1.PingRequest
-	11, // 10: unwedge.v1.Unwedge.StreamConsole:input_type -> unwedge.v1.StreamConsoleRequest
-	13, // 11: unwedge.v1.Unwedge.ReadConsoleLog:input_type -> unwedge.v1.ReadConsoleLogRequest
-	15, // 12: unwedge.v1.Unwedge.WriteConsole:input_type -> unwedge.v1.WriteConsoleRequest
-	17, // 13: unwedge.v1.Unwedge.WaitForPattern:input_type -> unwedge.v1.WaitForPatternRequest
-	19, // 14: unwedge.v1.Unwedge.PowerControl:input_type -> unwedge.v1.PowerControlRequest
-	22, // 15: unwedge.v1.Unwedge.InterruptBoot:input_type -> unwedge.v1.InterruptBootRequest
-	23, // 16: unwedge.v1.Unwedge.Netboot:input_type -> unwedge.v1.NetbootRequest
-	24, // 17: unwedge.v1.Unwedge.RunUbootCommand:input_type -> unwedge.v1.RunUbootCommandRequest
-	26, // 18: unwedge.v1.Unwedge.UploadImage:input_type -> unwedge.v1.UploadImageRequest
-	28, // 19: unwedge.v1.Unwedge.ListImages:input_type -> unwedge.v1.ListImagesRequest
-	31, // 20: unwedge.v1.Unwedge.DeleteImage:input_type -> unwedge.v1.DeleteImageRequest
-	33, // 21: unwedge.v1.Unwedge.SSHExec:input_type -> unwedge.v1.SSHExecRequest
-	4,  // 22: unwedge.v1.Unwedge.GetStatus:output_type -> unwedge.v1.GetStatusResponse
-	6,  // 23: unwedge.v1.Unwedge.StartSession:output_type -> unwedge.v1.StartSessionResponse
-	8,  // 24: unwedge.v1.Unwedge.FinishSession:output_type -> unwedge.v1.FinishSessionResponse
-	10, // 25: unwedge.v1.Unwedge.Ping:output_type -> unwedge.v1.PingResponse
-	12, // 26: unwedge.v1.Unwedge.StreamConsole:output_type -> unwedge.v1.ConsoleChunk
-	14, // 27: unwedge.v1.Unwedge.ReadConsoleLog:output_type -> unwedge.v1.ReadConsoleLogResponse
-	16, // 28: unwedge.v1.Unwedge.WriteConsole:output_type -> unwedge.v1.WriteConsoleResponse
-	18, // 29: unwedge.v1.Unwedge.WaitForPattern:output_type -> unwedge.v1.WaitForPatternResponse
-	20, // 30: unwedge.v1.Unwedge.PowerControl:output_type -> unwedge.v1.PowerControlResponse
-	21, // 31: unwedge.v1.Unwedge.InterruptBoot:output_type -> unwedge.v1.BootEvent
-	21, // 32: unwedge.v1.Unwedge.Netboot:output_type -> unwedge.v1.BootEvent
-	25, // 33: unwedge.v1.Unwedge.RunUbootCommand:output_type -> unwedge.v1.RunUbootCommandResponse
-	27, // 34: unwedge.v1.Unwedge.UploadImage:output_type -> unwedge.v1.UploadImageResponse
-	30, // 35: unwedge.v1.Unwedge.ListImages:output_type -> unwedge.v1.ListImagesResponse
-	32, // 36: unwedge.v1.Unwedge.DeleteImage:output_type -> unwedge.v1.DeleteImageResponse
-	34, // 37: unwedge.v1.Unwedge.SSHExec:output_type -> unwedge.v1.SSHExecResponse
-	22, // [22:38] is the sub-list for method output_type
-	6,  // [6:22] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	41, // 6: unwedge.v1.SCPUploadRequest.metadata:type_name -> unwedge.v1.SCPUploadRequest.Metadata
+	42, // 7: unwedge.v1.SCPDownloadResponse.metadata:type_name -> unwedge.v1.SCPDownloadResponse.Metadata
+	3,  // 8: unwedge.v1.Unwedge.GetStatus:input_type -> unwedge.v1.GetStatusRequest
+	5,  // 9: unwedge.v1.Unwedge.StartSession:input_type -> unwedge.v1.StartSessionRequest
+	7,  // 10: unwedge.v1.Unwedge.FinishSession:input_type -> unwedge.v1.FinishSessionRequest
+	9,  // 11: unwedge.v1.Unwedge.Ping:input_type -> unwedge.v1.PingRequest
+	11, // 12: unwedge.v1.Unwedge.StreamConsole:input_type -> unwedge.v1.StreamConsoleRequest
+	13, // 13: unwedge.v1.Unwedge.ReadConsoleLog:input_type -> unwedge.v1.ReadConsoleLogRequest
+	15, // 14: unwedge.v1.Unwedge.WriteConsole:input_type -> unwedge.v1.WriteConsoleRequest
+	17, // 15: unwedge.v1.Unwedge.WaitForPattern:input_type -> unwedge.v1.WaitForPatternRequest
+	19, // 16: unwedge.v1.Unwedge.PowerControl:input_type -> unwedge.v1.PowerControlRequest
+	22, // 17: unwedge.v1.Unwedge.InterruptBoot:input_type -> unwedge.v1.InterruptBootRequest
+	23, // 18: unwedge.v1.Unwedge.Netboot:input_type -> unwedge.v1.NetbootRequest
+	24, // 19: unwedge.v1.Unwedge.RunUbootCommand:input_type -> unwedge.v1.RunUbootCommandRequest
+	26, // 20: unwedge.v1.Unwedge.UploadImage:input_type -> unwedge.v1.UploadImageRequest
+	28, // 21: unwedge.v1.Unwedge.ListImages:input_type -> unwedge.v1.ListImagesRequest
+	31, // 22: unwedge.v1.Unwedge.DeleteImage:input_type -> unwedge.v1.DeleteImageRequest
+	33, // 23: unwedge.v1.Unwedge.SSHExec:input_type -> unwedge.v1.SSHExecRequest
+	35, // 24: unwedge.v1.Unwedge.Tunnel:input_type -> unwedge.v1.TunnelChunk
+	36, // 25: unwedge.v1.Unwedge.SCPUpload:input_type -> unwedge.v1.SCPUploadRequest
+	38, // 26: unwedge.v1.Unwedge.SCPDownload:input_type -> unwedge.v1.SCPDownloadRequest
+	4,  // 27: unwedge.v1.Unwedge.GetStatus:output_type -> unwedge.v1.GetStatusResponse
+	6,  // 28: unwedge.v1.Unwedge.StartSession:output_type -> unwedge.v1.StartSessionResponse
+	8,  // 29: unwedge.v1.Unwedge.FinishSession:output_type -> unwedge.v1.FinishSessionResponse
+	10, // 30: unwedge.v1.Unwedge.Ping:output_type -> unwedge.v1.PingResponse
+	12, // 31: unwedge.v1.Unwedge.StreamConsole:output_type -> unwedge.v1.ConsoleChunk
+	14, // 32: unwedge.v1.Unwedge.ReadConsoleLog:output_type -> unwedge.v1.ReadConsoleLogResponse
+	16, // 33: unwedge.v1.Unwedge.WriteConsole:output_type -> unwedge.v1.WriteConsoleResponse
+	18, // 34: unwedge.v1.Unwedge.WaitForPattern:output_type -> unwedge.v1.WaitForPatternResponse
+	20, // 35: unwedge.v1.Unwedge.PowerControl:output_type -> unwedge.v1.PowerControlResponse
+	21, // 36: unwedge.v1.Unwedge.InterruptBoot:output_type -> unwedge.v1.BootEvent
+	21, // 37: unwedge.v1.Unwedge.Netboot:output_type -> unwedge.v1.BootEvent
+	25, // 38: unwedge.v1.Unwedge.RunUbootCommand:output_type -> unwedge.v1.RunUbootCommandResponse
+	27, // 39: unwedge.v1.Unwedge.UploadImage:output_type -> unwedge.v1.UploadImageResponse
+	30, // 40: unwedge.v1.Unwedge.ListImages:output_type -> unwedge.v1.ListImagesResponse
+	32, // 41: unwedge.v1.Unwedge.DeleteImage:output_type -> unwedge.v1.DeleteImageResponse
+	34, // 42: unwedge.v1.Unwedge.SSHExec:output_type -> unwedge.v1.SSHExecResponse
+	35, // 43: unwedge.v1.Unwedge.Tunnel:output_type -> unwedge.v1.TunnelChunk
+	37, // 44: unwedge.v1.Unwedge.SCPUpload:output_type -> unwedge.v1.SCPUploadResponse
+	39, // 45: unwedge.v1.Unwedge.SCPDownload:output_type -> unwedge.v1.SCPDownloadResponse
+	27, // [27:46] is the sub-list for method output_type
+	8,  // [8:27] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_unwedge_v1_unwedge_proto_init() }
@@ -2330,13 +2840,21 @@ func file_unwedge_v1_unwedge_proto_init() {
 		(*UploadImageRequest_Metadata_)(nil),
 		(*UploadImageRequest_Chunk)(nil),
 	}
+	file_unwedge_v1_unwedge_proto_msgTypes[33].OneofWrappers = []any{
+		(*SCPUploadRequest_Metadata_)(nil),
+		(*SCPUploadRequest_Chunk)(nil),
+	}
+	file_unwedge_v1_unwedge_proto_msgTypes[36].OneofWrappers = []any{
+		(*SCPDownloadResponse_Metadata_)(nil),
+		(*SCPDownloadResponse_Chunk)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_unwedge_v1_unwedge_proto_rawDesc), len(file_unwedge_v1_unwedge_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   33,
+			NumMessages:   40,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

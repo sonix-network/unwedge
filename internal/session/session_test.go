@@ -153,6 +153,46 @@ func TestActiveCallBlocksExpiry(t *testing.T) {
 	}
 }
 
+// TestFinishDuringCallDoesNotWedgeNextSession reproduces issue #5: a call in
+// flight when the holder is cleared (e.g. a killed client's FinishSession racing
+// its still-tearing-down RPC) must not leak the activeCalls decrement into the
+// next session and pin it as permanently non-expiring.
+func TestFinishDuringCallDoesNotWedgeNextSession(t *testing.T) {
+	m := NewManager(50 * time.Millisecond)
+	defer m.Close()
+
+	// Session A holds the lock with a call in flight.
+	a, _ := m.Acquire(context.Background(), "a", -1)
+	if err := m.CallStart(a.ID); err != nil {
+		t.Fatalf("CallStart(a): %v", err)
+	}
+	// A's client dies: FinishSession clears the lock while the call is still
+	// in flight (activeCalls == 1).
+	if err := m.Finish(a.ID); err != nil {
+		t.Fatalf("Finish(a): %v", err)
+	}
+
+	// Session B acquires the now-free lock.
+	b, err := m.Acquire(context.Background(), "b", -1)
+	if err != nil {
+		t.Fatalf("Acquire(b): %v", err)
+	}
+	// A's original call finally returns; its CallEnd carries the stale id and
+	// must not affect B's counter.
+	m.CallEnd(a.ID)
+
+	// B is idle and past its TTL, so it must expire.
+	time.Sleep(120 * time.Millisecond)
+	if m.Info().Active {
+		t.Fatal("idle session B never expired: activeCalls leaked across the session boundary (issue #5)")
+	}
+	// And the hardware is reclaimable.
+	if _, err := m.Acquire(context.Background(), "c", -1); err != nil {
+		t.Fatalf("re-acquire after expiry failed: %v", err)
+	}
+	_ = b
+}
+
 func TestRefreshRejectsWrongID(t *testing.T) {
 	m := NewManager(time.Minute)
 	defer m.Close()

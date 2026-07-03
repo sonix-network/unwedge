@@ -284,6 +284,167 @@ func (c *Client) InterruptBoot(ctx context.Context, req *unwedgev1.InterruptBoot
 	return drainBootEvents(stream, h)
 }
 
+// Tunnel proxies a raw byte stream between in/out and the target's SSH port
+// (or hostOverride "host[:port]") through the daemon, returning when either end
+// closes. It backs an OpenSSH ProxyCommand so a local ssh/scp can reach the
+// target through the daemon.
+func (c *Client) Tunnel(ctx context.Context, hostOverride string, in io.Reader, out io.Writer) error {
+	stream, err := c.API.Tunnel(ctx)
+	if err != nil {
+		return err
+	}
+	// The first message opens the tunnel and selects the dial target.
+	if err := stream.Send(&unwedgev1.TunnelChunk{HostOverride: hostOverride}); err != nil {
+		return err
+	}
+	errc := make(chan error, 2)
+	go func() { // local -> daemon
+		buf := make([]byte, 32*1024)
+		for {
+			n, rerr := in.Read(buf)
+			if n > 0 {
+				if serr := stream.Send(&unwedgev1.TunnelChunk{Data: buf[:n]}); serr != nil {
+					errc <- serr
+					return
+				}
+			}
+			if rerr != nil {
+				// Half-close our send side; keep receiving until the daemon
+				// closes the stream (authoritative end of the connection).
+				_ = stream.CloseSend()
+				if rerr != io.EOF {
+					errc <- rerr
+				}
+				return
+			}
+		}
+	}()
+	go func() { // daemon -> local
+		for {
+			msg, rerr := stream.Recv()
+			if rerr != nil {
+				errc <- rerr
+				return
+			}
+			if b := msg.GetData(); len(b) > 0 {
+				if _, werr := out.Write(b); werr != nil {
+					errc <- werr
+					return
+				}
+			}
+		}
+	}()
+	if err := <-errc; err != nil && err != io.EOF {
+		return err
+	}
+	return nil
+}
+
+// SCPUploadFile copies localPath to remotePath on the target over the classic
+// scp protocol and returns the number of bytes written.
+func (c *Client) SCPUploadFile(ctx context.Context, localPath, remotePath, hostOverride string, timeout time.Duration) (int64, error) {
+	f, err := os.Open(localPath)
+	if err != nil {
+		return 0, fmt.Errorf("client: open %s: %w", localPath, err)
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return 0, err
+	}
+	if fi.IsDir() {
+		return 0, fmt.Errorf("client: %s is a directory", localPath)
+	}
+	stream, err := c.API.SCPUpload(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if err := stream.Send(&unwedgev1.SCPUploadRequest{
+		Payload: &unwedgev1.SCPUploadRequest_Metadata_{
+			Metadata: &unwedgev1.SCPUploadRequest_Metadata{
+				RemotePath:   remotePath,
+				Size:         fi.Size(),
+				Mode:         uint32(fi.Mode().Perm()),
+				TimeoutMs:    timeout.Milliseconds(),
+				HostOverride: hostOverride,
+			},
+		},
+	}); err != nil {
+		return 0, err
+	}
+	buf := make([]byte, 64*1024)
+	for {
+		n, rerr := f.Read(buf)
+		if n > 0 {
+			if err := stream.Send(&unwedgev1.SCPUploadRequest{
+				Payload: &unwedgev1.SCPUploadRequest_Chunk{Chunk: buf[:n]},
+			}); err != nil {
+				return 0, err
+			}
+		}
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			return 0, fmt.Errorf("client: read %s: %w", localPath, rerr)
+		}
+	}
+	resp, err := stream.CloseAndRecv()
+	if err != nil {
+		return 0, err
+	}
+	return resp.GetBytesWritten(), nil
+}
+
+// SCPDownloadFile copies remotePath from the target to localPath over the
+// classic scp protocol and returns the number of bytes written. The local file
+// is created with the mode the target reports.
+func (c *Client) SCPDownloadFile(ctx context.Context, remotePath, localPath, hostOverride string, timeout time.Duration) (int64, error) {
+	stream, err := c.API.SCPDownload(ctx, &unwedgev1.SCPDownloadRequest{
+		RemotePath:   remotePath,
+		TimeoutMs:    timeout.Milliseconds(),
+		HostOverride: hostOverride,
+	})
+	if err != nil {
+		return 0, err
+	}
+	msg, err := stream.Recv()
+	if err != nil {
+		return 0, err
+	}
+	meta := msg.GetMetadata()
+	if meta == nil {
+		return 0, fmt.Errorf("client: expected scp metadata as the first message")
+	}
+	mode := os.FileMode(meta.GetMode()).Perm()
+	if mode == 0 {
+		mode = 0o644
+	}
+	f, err := os.OpenFile(localPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	if err != nil {
+		return 0, fmt.Errorf("client: create %s: %w", localPath, err)
+	}
+	defer f.Close()
+	var written int64
+	for {
+		msg, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return written, err
+		}
+		if b := msg.GetChunk(); len(b) > 0 {
+			n, werr := f.Write(b)
+			written += int64(n)
+			if werr != nil {
+				return written, fmt.Errorf("client: write %s: %w", localPath, werr)
+			}
+		}
+	}
+	return written, f.Close()
+}
+
 type bootStream interface {
 	Recv() (*unwedgev1.BootEvent, error)
 }

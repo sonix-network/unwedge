@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
 	"regexp"
 	"time"
 
@@ -389,6 +390,169 @@ func (s *Service) SSHExec(ctx context.Context, req *unwedgev1.SSHExecRequest) (*
 		Stderr:   res.Stderr,
 		TimedOut: res.TimedOut,
 	}, nil
+}
+
+// Tunnel proxies raw bytes between the caller and a TCP connection the daemon
+// opens to the target's SSH port (or an override). SSH authentication is
+// end-to-end between the caller's local client and the target; the daemon only
+// shuffles bytes, which is what lets a local ssh/scp use it as a ProxyCommand.
+func (s *Service) Tunnel(stream unwedgev1.Unwedge_TunnelServer) error {
+	if s.deps.SSH == nil {
+		return status.Error(codes.FailedPrecondition, "ssh not configured")
+	}
+	ctx := stream.Context()
+	// The first message selects the dial target and may carry initial bytes.
+	first, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+	conn, err := s.deps.SSH.DialTCP(ctx, first.GetHostOverride())
+	if err != nil {
+		return status.Errorf(codes.Unavailable, "tunnel dial: %v", err)
+	}
+	defer conn.Close()
+	if b := first.GetData(); len(b) > 0 {
+		if _, err := conn.Write(b); err != nil {
+			return status.Errorf(codes.Unavailable, "tunnel write: %v", err)
+		}
+	}
+
+	errc := make(chan error, 2)
+	go func() { // target -> client
+		buf := make([]byte, 32*1024)
+		for {
+			n, rerr := conn.Read(buf)
+			if n > 0 {
+				if serr := stream.Send(&unwedgev1.TunnelChunk{Data: buf[:n]}); serr != nil {
+					errc <- serr
+					return
+				}
+			}
+			if rerr != nil {
+				errc <- rerr
+				return
+			}
+		}
+	}()
+	go func() { // client -> target
+		for {
+			msg, rerr := stream.Recv()
+			if rerr != nil {
+				errc <- rerr
+				return
+			}
+			if b := msg.GetData(); len(b) > 0 {
+				if _, werr := conn.Write(b); werr != nil {
+					errc <- werr
+					return
+				}
+			}
+		}
+	}()
+
+	err = <-errc
+	conn.Close() // unblock the other direction
+	switch {
+	case err == nil, errors.Is(err, io.EOF), errors.Is(err, context.Canceled), ctx.Err() != nil:
+		return nil
+	default:
+		return status.Errorf(codes.Unavailable, "tunnel: %v", err)
+	}
+}
+
+// SCPUpload copies a streamed file to the target using the classic scp protocol.
+func (s *Service) SCPUpload(stream unwedgev1.Unwedge_SCPUploadServer) error {
+	if s.deps.SSH == nil {
+		return status.Error(codes.FailedPrecondition, "ssh not configured")
+	}
+	first, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+	meta := first.GetMetadata()
+	if meta == nil {
+		return status.Error(codes.InvalidArgument, "first SCPUpload message must be metadata")
+	}
+	if meta.GetRemotePath() == "" {
+		return status.Error(codes.InvalidArgument, "remote_path required")
+	}
+	if meta.GetSize() < 0 {
+		return status.Error(codes.InvalidArgument, "size must be non-negative")
+	}
+
+	// Bridge subsequent chunk messages into an io.Reader the scp source reads.
+	pr, pw := io.Pipe()
+	go func() {
+		for {
+			msg, rerr := stream.Recv()
+			if rerr == io.EOF {
+				pw.Close()
+				return
+			}
+			if rerr != nil {
+				pw.CloseWithError(rerr)
+				return
+			}
+			if b := msg.GetChunk(); len(b) > 0 {
+				if _, werr := pw.Write(b); werr != nil {
+					return
+				}
+			}
+		}
+	}()
+
+	err = s.deps.SSH.SCPUpload(stream.Context(), meta.GetHostOverride(), meta.GetRemotePath(),
+		os.FileMode(meta.GetMode()), meta.GetSize(), pr, dur(meta.GetTimeoutMs(), 5*time.Minute))
+	pr.CloseWithError(err) // stop the receiver goroutine if it is still writing
+	if err != nil {
+		return status.Errorf(codes.Unavailable, "scp upload: %v", err)
+	}
+	return stream.SendAndClose(&unwedgev1.SCPUploadResponse{BytesWritten: meta.GetSize()})
+}
+
+// SCPDownload copies a file from the target using the classic scp protocol and
+// streams its metadata then bytes to the caller.
+func (s *Service) SCPDownload(req *unwedgev1.SCPDownloadRequest, stream unwedgev1.Unwedge_SCPDownloadServer) error {
+	if s.deps.SSH == nil {
+		return status.Error(codes.FailedPrecondition, "ssh not configured")
+	}
+	if req.GetRemotePath() == "" {
+		return status.Error(codes.InvalidArgument, "remote_path required")
+	}
+	err := s.deps.SSH.SCPDownload(stream.Context(), req.GetHostOverride(), req.GetRemotePath(),
+		dur(req.GetTimeoutMs(), 5*time.Minute),
+		func(meta sshexec.SCPMeta, body io.Reader) error {
+			if serr := stream.Send(&unwedgev1.SCPDownloadResponse{
+				Payload: &unwedgev1.SCPDownloadResponse_Metadata_{
+					Metadata: &unwedgev1.SCPDownloadResponse_Metadata{
+						Size: meta.Size, Mode: uint32(meta.Mode), Name: meta.Name,
+					},
+				},
+			}); serr != nil {
+				return serr
+			}
+			buf := make([]byte, 64*1024)
+			for {
+				n, rerr := body.Read(buf)
+				if n > 0 {
+					if serr := stream.Send(&unwedgev1.SCPDownloadResponse{
+						Payload: &unwedgev1.SCPDownloadResponse_Chunk{Chunk: buf[:n]},
+					}); serr != nil {
+						return serr
+					}
+				}
+				if rerr == io.EOF {
+					return nil
+				}
+				if rerr != nil {
+					return rerr
+				}
+			}
+		})
+	if err != nil {
+		return status.Errorf(codes.Unavailable, "scp download: %v", err)
+	}
+	return nil
 }
 
 // ---- helpers ---------------------------------------------------------------

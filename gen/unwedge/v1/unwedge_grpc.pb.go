@@ -41,6 +41,9 @@ const (
 	Unwedge_ListImages_FullMethodName      = "/unwedge.v1.Unwedge/ListImages"
 	Unwedge_DeleteImage_FullMethodName     = "/unwedge.v1.Unwedge/DeleteImage"
 	Unwedge_SSHExec_FullMethodName         = "/unwedge.v1.Unwedge/SSHExec"
+	Unwedge_Tunnel_FullMethodName          = "/unwedge.v1.Unwedge/Tunnel"
+	Unwedge_SCPUpload_FullMethodName       = "/unwedge.v1.Unwedge/SCPUpload"
+	Unwedge_SCPDownload_FullMethodName     = "/unwedge.v1.Unwedge/SCPDownload"
 )
 
 // UnwedgeClient is the client API for Unwedge service.
@@ -104,6 +107,21 @@ type UnwedgeClient interface {
 	// SSHExec runs a command on the booted target over SSH and returns its
 	// output and exit status.
 	SSHExec(ctx context.Context, in *SSHExecRequest, opts ...grpc.CallOption) (*SSHExecResponse, error)
+	// Tunnel proxies a raw TCP byte stream between the caller and the target's
+	// SSH port (or an override host:port on the target's network). The daemon
+	// only shuffles bytes; SSH authentication is end-to-end between the caller's
+	// local client and the target. This lets a local ssh/scp speak to the target
+	// through the daemon, e.g. as an OpenSSH ProxyCommand:
+	//
+	//	ssh -o ProxyCommand="unwedge ssh -W" root@target
+	Tunnel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[TunnelChunk, TunnelChunk], error)
+	// SCPUpload copies a file to the target using the classic scp protocol
+	// (remote `scp -t`), so no SFTP subsystem is required on the target. The
+	// first message must carry metadata; subsequent messages carry file bytes.
+	SCPUpload(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[SCPUploadRequest, SCPUploadResponse], error)
+	// SCPDownload copies a file from the target using the classic scp protocol
+	// (remote `scp -f`). The response streams metadata first, then file bytes.
+	SCPDownload(ctx context.Context, in *SCPDownloadRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SCPDownloadResponse], error)
 }
 
 type unwedgeClient struct {
@@ -304,6 +322,51 @@ func (c *unwedgeClient) SSHExec(ctx context.Context, in *SSHExecRequest, opts ..
 	return out, nil
 }
 
+func (c *unwedgeClient) Tunnel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[TunnelChunk, TunnelChunk], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Unwedge_ServiceDesc.Streams[4], Unwedge_Tunnel_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[TunnelChunk, TunnelChunk]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Unwedge_TunnelClient = grpc.BidiStreamingClient[TunnelChunk, TunnelChunk]
+
+func (c *unwedgeClient) SCPUpload(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[SCPUploadRequest, SCPUploadResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Unwedge_ServiceDesc.Streams[5], Unwedge_SCPUpload_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[SCPUploadRequest, SCPUploadResponse]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Unwedge_SCPUploadClient = grpc.ClientStreamingClient[SCPUploadRequest, SCPUploadResponse]
+
+func (c *unwedgeClient) SCPDownload(ctx context.Context, in *SCPDownloadRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SCPDownloadResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Unwedge_ServiceDesc.Streams[6], Unwedge_SCPDownload_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[SCPDownloadRequest, SCPDownloadResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Unwedge_SCPDownloadClient = grpc.ServerStreamingClient[SCPDownloadResponse]
+
 // UnwedgeServer is the server API for Unwedge service.
 // All implementations must embed UnimplementedUnwedgeServer
 // for forward compatibility.
@@ -365,6 +428,21 @@ type UnwedgeServer interface {
 	// SSHExec runs a command on the booted target over SSH and returns its
 	// output and exit status.
 	SSHExec(context.Context, *SSHExecRequest) (*SSHExecResponse, error)
+	// Tunnel proxies a raw TCP byte stream between the caller and the target's
+	// SSH port (or an override host:port on the target's network). The daemon
+	// only shuffles bytes; SSH authentication is end-to-end between the caller's
+	// local client and the target. This lets a local ssh/scp speak to the target
+	// through the daemon, e.g. as an OpenSSH ProxyCommand:
+	//
+	//	ssh -o ProxyCommand="unwedge ssh -W" root@target
+	Tunnel(grpc.BidiStreamingServer[TunnelChunk, TunnelChunk]) error
+	// SCPUpload copies a file to the target using the classic scp protocol
+	// (remote `scp -t`), so no SFTP subsystem is required on the target. The
+	// first message must carry metadata; subsequent messages carry file bytes.
+	SCPUpload(grpc.ClientStreamingServer[SCPUploadRequest, SCPUploadResponse]) error
+	// SCPDownload copies a file from the target using the classic scp protocol
+	// (remote `scp -f`). The response streams metadata first, then file bytes.
+	SCPDownload(*SCPDownloadRequest, grpc.ServerStreamingServer[SCPDownloadResponse]) error
 	mustEmbedUnimplementedUnwedgeServer()
 }
 
@@ -422,6 +500,15 @@ func (UnimplementedUnwedgeServer) DeleteImage(context.Context, *DeleteImageReque
 }
 func (UnimplementedUnwedgeServer) SSHExec(context.Context, *SSHExecRequest) (*SSHExecResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SSHExec not implemented")
+}
+func (UnimplementedUnwedgeServer) Tunnel(grpc.BidiStreamingServer[TunnelChunk, TunnelChunk]) error {
+	return status.Error(codes.Unimplemented, "method Tunnel not implemented")
+}
+func (UnimplementedUnwedgeServer) SCPUpload(grpc.ClientStreamingServer[SCPUploadRequest, SCPUploadResponse]) error {
+	return status.Error(codes.Unimplemented, "method SCPUpload not implemented")
+}
+func (UnimplementedUnwedgeServer) SCPDownload(*SCPDownloadRequest, grpc.ServerStreamingServer[SCPDownloadResponse]) error {
+	return status.Error(codes.Unimplemented, "method SCPDownload not implemented")
 }
 func (UnimplementedUnwedgeServer) mustEmbedUnimplementedUnwedgeServer() {}
 func (UnimplementedUnwedgeServer) testEmbeddedByValue()                 {}
@@ -700,6 +787,31 @@ func _Unwedge_SSHExec_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Unwedge_Tunnel_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(UnwedgeServer).Tunnel(&grpc.GenericServerStream[TunnelChunk, TunnelChunk]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Unwedge_TunnelServer = grpc.BidiStreamingServer[TunnelChunk, TunnelChunk]
+
+func _Unwedge_SCPUpload_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(UnwedgeServer).SCPUpload(&grpc.GenericServerStream[SCPUploadRequest, SCPUploadResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Unwedge_SCPUploadServer = grpc.ClientStreamingServer[SCPUploadRequest, SCPUploadResponse]
+
+func _Unwedge_SCPDownload_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(SCPDownloadRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(UnwedgeServer).SCPDownload(m, &grpc.GenericServerStream[SCPDownloadRequest, SCPDownloadResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Unwedge_SCPDownloadServer = grpc.ServerStreamingServer[SCPDownloadResponse]
+
 // Unwedge_ServiceDesc is the grpc.ServiceDesc for Unwedge service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -776,6 +888,22 @@ var Unwedge_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "UploadImage",
 			Handler:       _Unwedge_UploadImage_Handler,
 			ClientStreams: true,
+		},
+		{
+			StreamName:    "Tunnel",
+			Handler:       _Unwedge_Tunnel_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "SCPUpload",
+			Handler:       _Unwedge_SCPUpload_Handler,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "SCPDownload",
+			Handler:       _Unwedge_SCPDownload_Handler,
+			ServerStreams: true,
 		},
 	},
 	Metadata: "unwedge/v1/unwedge.proto",

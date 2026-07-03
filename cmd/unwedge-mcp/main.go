@@ -1,7 +1,7 @@
 // Command unwedge-mcp is a Model Context Protocol server that an AI agent runs
 // locally. It bridges MCP tool calls to a remote unwedged daemon over gRPC/TLS,
-// exposing the vEdge 1000's console, power, U-Boot, images, SSH, and the release
-// smoke test as tools.
+// exposing the vEdge 1000's console, power, U-Boot, images, SSH, file transfer
+// (scp), and the release smoke test as tools.
 package main
 
 import (
@@ -452,6 +452,62 @@ func registerTools(srv *mcp.Server, cl *client.Client, owner string, wait time.D
 	})
 
 	srv.AddTool(mcp.Tool{
+		Name: "scp_upload",
+		Description: "Copy a local file (path on the machine running this MCP server) to the booted target over SSH " +
+			"(classic scp protocol). Use for pushing test binaries, configs, or scripts onto the DUT.",
+		InputSchema: schema(obj{
+			"local_path":  obj{"type": "string", "description": "source path on the MCP host"},
+			"remote_path": obj{"type": "string", "description": "destination path on the target"},
+			"host":        obj{"type": "string", "description": "override target host (host[:port])"},
+			"timeout_ms":  obj{"type": "integer"},
+		}, "local_path", "remote_path"),
+		Handler: func(ctx context.Context, args json.RawMessage) (string, error) {
+			var a struct {
+				LocalPath  string `json:"local_path"`
+				RemotePath string `json:"remote_path"`
+				Host       string `json:"host"`
+				TimeoutMs  int64  `json:"timeout_ms"`
+			}
+			if err := json.Unmarshal(args, &a); err != nil {
+				return "", err
+			}
+			n, err := cl.SCPUploadFile(ctx, a.LocalPath, a.RemotePath, a.Host, scpTimeout(a.TimeoutMs))
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("uploaded %d bytes to %s", n, a.RemotePath), nil
+		},
+	})
+
+	srv.AddTool(mcp.Tool{
+		Name: "scp_download",
+		Description: "Copy a file from the booted target to the machine running this MCP server over SSH " +
+			"(classic scp protocol). Use for pulling logs, cores, or captured output off the DUT.",
+		InputSchema: schema(obj{
+			"remote_path": obj{"type": "string", "description": "source path on the target"},
+			"local_path":  obj{"type": "string", "description": "destination path on the MCP host"},
+			"host":        obj{"type": "string", "description": "override target host (host[:port])"},
+			"timeout_ms":  obj{"type": "integer"},
+		}, "remote_path", "local_path"),
+		Handler: func(ctx context.Context, args json.RawMessage) (string, error) {
+			var a struct {
+				RemotePath string `json:"remote_path"`
+				LocalPath  string `json:"local_path"`
+				Host       string `json:"host"`
+				TimeoutMs  int64  `json:"timeout_ms"`
+			}
+			if err := json.Unmarshal(args, &a); err != nil {
+				return "", err
+			}
+			n, err := cl.SCPDownloadFile(ctx, a.RemotePath, a.LocalPath, a.Host, scpTimeout(a.TimeoutMs))
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("downloaded %d bytes to %s", n, a.LocalPath), nil
+		},
+	})
+
+	srv.AddTool(mcp.Tool{
 		Name: "smoke_test",
 		Description: "Release smoke test: upload a local initramfs image, netboot it, and verify the board reaches healthy " +
 			"userspace. Returns PASS/FAIL and the boot log; optionally writes the boot log to out_path.",
@@ -520,6 +576,14 @@ func bootEventCollector(sb *strings.Builder) client.BootEventHandler {
 			sb.WriteString(s[len(s)-100_000:])
 		}
 	}
+}
+
+// scpTimeout defaults an unset/zero timeout to 5 minutes.
+func scpTimeout(ms int64) time.Duration {
+	if ms > 0 {
+		return time.Duration(ms) * time.Millisecond
+	}
+	return 5 * time.Minute
 }
 
 func outNote(p string) string {
