@@ -95,38 +95,76 @@ func withPort(host string, def string) string {
 	return net.JoinHostPort(host, def)
 }
 
-// Exec runs command on host (or hostOverride if non-empty) and returns its
-// output and exit status. A non-zero exit code is returned in Result, not as an
-// error; err is reserved for connection/transport failures.
-func (c *Client) Exec(ctx context.Context, hostOverride, command string, timeout time.Duration) (Result, error) {
+// TargetHost returns the configured target host (host or host:port), or empty
+// if none is set. Used to pick the dial target for a raw TCP tunnel.
+func (c *Client) TargetHost() string { return c.cfg.Host }
+
+// dialTimeout returns the effective TCP+handshake timeout.
+func (c *Client) dialTimeout() time.Duration {
+	if c.cfg.DialTimeout == 0 {
+		return 10 * time.Second
+	}
+	return c.cfg.DialTimeout
+}
+
+// dial establishes an SSH client to hostOverride (or the configured host if
+// empty), honoring ctx. The caller must Close the returned client.
+func (c *Client) dial(ctx context.Context, hostOverride string) (*ssh.Client, error) {
 	host := c.cfg.Host
 	if hostOverride != "" {
 		host = hostOverride
 	}
 	if host == "" {
-		return Result{}, fmt.Errorf("sshexec: no host configured")
+		return nil, fmt.Errorf("sshexec: no host configured")
 	}
 	addr := withPort(host, "22")
 
 	methods, err := c.authMethods()
 	if err != nil {
-		return Result{}, err
+		return nil, err
 	}
 	hkcb, err := c.hostKeyCallback()
 	if err != nil {
-		return Result{}, err
-	}
-	dialTimeout := c.cfg.DialTimeout
-	if dialTimeout == 0 {
-		dialTimeout = 10 * time.Second
+		return nil, err
 	}
 	sshCfg := &ssh.ClientConfig{
 		User:            c.cfg.User,
 		Auth:            methods,
 		HostKeyCallback: hkcb,
-		Timeout:         dialTimeout,
+		Timeout:         c.dialTimeout(),
 	}
+	d := net.Dialer{Timeout: c.dialTimeout()}
+	conn, err := d.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("sshexec: dial %s: %w", addr, err)
+	}
+	sshConn, chans, reqs, err := ssh.NewClientConn(conn, addr, sshCfg)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("sshexec: handshake %s: %w", addr, err)
+	}
+	return ssh.NewClient(sshConn, chans, reqs), nil
+}
 
+// DialTCP opens a raw TCP connection to hostOverride (or the configured host if
+// empty), defaulting the port to 22. No SSH handshake is performed: it is used
+// to tunnel a client's own SSH session to the target through the daemon.
+func (c *Client) DialTCP(ctx context.Context, hostOverride string) (net.Conn, error) {
+	host := c.cfg.Host
+	if hostOverride != "" {
+		host = hostOverride
+	}
+	if host == "" {
+		return nil, fmt.Errorf("sshexec: no host configured")
+	}
+	d := net.Dialer{Timeout: c.dialTimeout()}
+	return d.DialContext(ctx, "tcp", withPort(host, "22"))
+}
+
+// Exec runs command on host (or hostOverride if non-empty) and returns its
+// output and exit status. A non-zero exit code is returned in Result, not as an
+// error; err is reserved for connection/transport failures.
+func (c *Client) Exec(ctx context.Context, hostOverride, command string, timeout time.Duration) (Result, error) {
 	// Apply an overall context deadline covering dial + run.
 	if timeout > 0 {
 		var cancel context.CancelFunc
@@ -134,17 +172,10 @@ func (c *Client) Exec(ctx context.Context, hostOverride, command string, timeout
 		defer cancel()
 	}
 
-	d := net.Dialer{Timeout: dialTimeout}
-	conn, err := d.DialContext(ctx, "tcp", addr)
+	client, err := c.dial(ctx, hostOverride)
 	if err != nil {
-		return Result{}, fmt.Errorf("sshexec: dial %s: %w", addr, err)
+		return Result{}, err
 	}
-	sshConn, chans, reqs, err := ssh.NewClientConn(conn, addr, sshCfg)
-	if err != nil {
-		conn.Close()
-		return Result{}, fmt.Errorf("sshexec: handshake %s: %w", addr, err)
-	}
-	client := ssh.NewClient(sshConn, chans, reqs)
 	defer client.Close()
 
 	session, err := client.NewSession()

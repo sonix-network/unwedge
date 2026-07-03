@@ -103,6 +103,23 @@ service Unwedge {
   // SSHExec runs a command on the booted target over SSH and returns its
   // output and exit status.
   rpc SSHExec(SSHExecRequest) returns (SSHExecResponse);
+
+  // Tunnel proxies a raw TCP byte stream between the caller and the target's
+  // SSH port (or an override host:port on the target's network). The daemon
+  // only shuffles bytes; SSH authentication is end-to-end between the caller's
+  // local client and the target. This lets a local ssh/scp speak to the target
+  // through the daemon, e.g. as an OpenSSH ProxyCommand:
+  //   ssh -o ProxyCommand="unwedge ssh -W" root@target
+  rpc Tunnel(stream TunnelChunk) returns (stream TunnelChunk);
+
+  // SCPUpload copies a file to the target using the classic scp protocol
+  // (remote `scp -t`), so no SFTP subsystem is required on the target. The
+  // first message must carry metadata; subsequent messages carry file bytes.
+  rpc SCPUpload(stream SCPUploadRequest) returns (SCPUploadResponse);
+
+  // SCPDownload copies a file from the target using the classic scp protocol
+  // (remote `scp -f`). The response streams metadata first, then file bytes.
+  rpc SCPDownload(SCPDownloadRequest) returns (stream SCPDownloadResponse);
 }
 
 // ---- Introspection ---------------------------------------------------------
@@ -339,4 +356,52 @@ message SSHExecResponse {
   bytes stdout = 2;
   bytes stderr = 3;
   bool timed_out = 4;
+}
+
+// TunnelChunk carries raw bytes for a Tunnel stream. The first client message
+// may set host_override to pick the dial target (host or host:port on the
+// target's network); empty means the configured SSH host on port 22. It is
+// read only from the first message; data flows in both directions thereafter.
+message TunnelChunk {
+  string host_override = 1;
+  bytes data = 2;
+}
+
+// ---- SCP -------------------------------------------------------------------
+
+message SCPUploadRequest {
+  message Metadata {
+    // Destination path on the target (file path, or a directory to drop into).
+    string remote_path = 1;
+    int64 size = 2;          // exact number of file bytes that follow
+    uint32 mode = 3;         // unix permission bits; 0 -> 0644
+    int64 timeout_ms = 4;
+    string host_override = 5;
+  }
+  oneof payload {
+    Metadata metadata = 1;   // must be the first message
+    bytes chunk = 2;         // subsequent messages
+  }
+}
+
+message SCPUploadResponse {
+  int64 bytes_written = 1;
+}
+
+message SCPDownloadRequest {
+  string remote_path = 1;    // source path on the target
+  int64 timeout_ms = 2;
+  string host_override = 3;
+}
+
+message SCPDownloadResponse {
+  message Metadata {
+    int64 size = 1;          // exact number of file bytes that follow
+    uint32 mode = 2;         // unix permission bits reported by the target
+    string name = 3;         // base name reported by the target
+  }
+  oneof payload {
+    Metadata metadata = 1;   // first message
+    bytes chunk = 2;         // subsequent messages
+  }
 }

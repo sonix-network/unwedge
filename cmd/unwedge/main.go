@@ -43,6 +43,8 @@ Commands:
   image upload <file>          upload an image to the store
   image rm <name>              delete an image from the store
   ssh <command>                run a command on the target over SSH
+  ssh -W [host:port]           proxy raw SSH to the target (OpenSSH ProxyCommand)
+  scp <src> <dst>              copy a file to/from the target (prefix its path ':')
   smoke <image-file>           release smoke test: netboot + verify + boot log
 
 Global flags:`
@@ -119,6 +121,8 @@ func realMain() int {
 	subVerify := sub.Bool("verify", *verify, "verify image CRC32 in U-Boot before booting")
 	subPowerCycle := sub.Bool("power-cycle", *powerCycle, "power-cycle before netboot/interrupt")
 	subTimeout := sub.Duration("timeout", *timeout, "overall timeout for the command")
+	subProxy := sub.Bool("W", false, "'ssh' proxy mode: pipe stdin/stdout to the target's SSH port (ProxyCommand)")
+	subHost := sub.String("host", "", "override the target host (host[:port]) for 'ssh'/'scp'")
 	if err := sub.Parse(rest); err != nil {
 		return 2
 	}
@@ -126,6 +130,7 @@ func realMain() int {
 	opts := cmdOpts{
 		keys: *subKeys, out: *subOut, kernelArgs: *subKernelArgs,
 		verify: *subVerify, powerCycle: *subPowerCycle, timeout: *subTimeout,
+		proxy: *subProxy, host: *subHost,
 	}
 
 	// Acquire the exclusive hardware lock for operational commands. Read-only
@@ -163,6 +168,8 @@ type cmdOpts struct {
 	verify     bool
 	powerCycle bool
 	timeout    time.Duration
+	proxy      bool
+	host       string
 }
 
 func dispatch(ctx context.Context, cl *client.Client, cmd string, args []string, o cmdOpts) error {
@@ -187,6 +194,8 @@ func dispatch(ctx context.Context, cl *client.Client, cmd string, args []string,
 		return cmdImage(ctx, cl, args)
 	case "ssh":
 		return cmdSSH(ctx, cl, args, o)
+	case "scp":
+		return cmdSCP(ctx, cl, args, o)
 	case "smoke":
 		return cmdSmoke(ctx, cl, args, o)
 	default:
@@ -363,11 +372,22 @@ func cmdImage(ctx context.Context, cl *client.Client, args []string) error {
 }
 
 func cmdSSH(ctx context.Context, cl *client.Client, args []string, o cmdOpts) error {
+	// Proxy mode (-W): tunnel raw SSH bytes so a local ssh/scp can reach the
+	// target through the daemon, e.g. ssh -o ProxyCommand="unwedge ssh -W".
+	// No command timeout applies; the session runs until either end closes.
+	if o.proxy {
+		host := o.host
+		if len(args) > 0 {
+			host = args[0] // optional host:port (e.g. OpenSSH's %h:%p)
+		}
+		return cl.Tunnel(ctx, host, os.Stdin, os.Stdout)
+	}
 	if len(args) == 0 {
-		return fmt.Errorf("ssh requires a command")
+		return fmt.Errorf("ssh requires a command (or -W for proxy mode)")
 	}
 	resp, err := cl.API.SSHExec(ctx, &unwedgev1.SSHExecRequest{
 		Command: strings.Join(args, " "), TimeoutMs: o.timeout.Milliseconds(),
+		HostOverride: o.host,
 	})
 	if err != nil {
 		return err
@@ -381,6 +401,35 @@ func cmdSSH(ctx context.Context, cl *client.Client, args []string, o cmdOpts) er
 		return fmt.Errorf("ssh command exited %d", resp.GetExitCode())
 	}
 	return nil
+}
+
+// cmdSCP copies a file to or from the target. Exactly one of <src>/<dst> must be
+// a target-side path, marked by a leading ':' (e.g. "unwedge scp ./f :/tmp/f"
+// uploads; "unwedge scp :/tmp/f ./f" downloads).
+func cmdSCP(ctx context.Context, cl *client.Client, args []string, o cmdOpts) error {
+	if len(args) != 2 {
+		return fmt.Errorf("scp requires <src> <dst>; prefix the target-side path with ':'")
+	}
+	src, dst := args[0], args[1]
+	srcRemote, dstRemote := strings.HasPrefix(src, ":"), strings.HasPrefix(dst, ":")
+	switch {
+	case srcRemote && !dstRemote:
+		n, err := cl.SCPDownloadFile(ctx, strings.TrimPrefix(src, ":"), dst, o.host, o.timeout)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "downloaded %d bytes to %s\n", n, dst)
+		return nil
+	case dstRemote && !srcRemote:
+		n, err := cl.SCPUploadFile(ctx, src, strings.TrimPrefix(dst, ":"), o.host, o.timeout)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "uploaded %d bytes to %s\n", n, dst)
+		return nil
+	default:
+		return fmt.Errorf("exactly one of <src>/<dst> must be a target path prefixed with ':'")
+	}
 }
 
 func cmdSmoke(ctx context.Context, cl *client.Client, args []string, o cmdOpts) error {

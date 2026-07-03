@@ -18,6 +18,7 @@ import (
 	unwedgev1 "github.com/sonix-network/unwedge/gen/unwedge/v1"
 	"github.com/sonix-network/unwedge/internal/power"
 	"github.com/sonix-network/unwedge/internal/serialconsole"
+	"github.com/sonix-network/unwedge/internal/sshexec"
 	"github.com/sonix-network/unwedge/internal/tftp"
 )
 
@@ -269,5 +270,86 @@ func TestGetStatus(t *testing.T) {
 	}
 	if resp.PowerState != unwedgev1.PowerState_POWER_STATE_ON {
 		t.Fatalf("power state = %v", resp.PowerState)
+	}
+}
+
+func TestTunnelProxiesToTarget(t *testing.T) {
+	// A raw TCP echo server stands in for the target's SSH port; Tunnel is a
+	// byte proxy, so no SSH handshake is involved.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() { io.Copy(c, c); c.Close() }()
+		}
+	}()
+
+	sshCl, err := sshexec.New(sshexec.Config{Host: ln.Addr().String(), User: "root", Password: "x"})
+	if err != nil {
+		t.Fatalf("sshexec.New: %v", err)
+	}
+	client := startTestServer(t, Deps{SSH: sshCl})
+
+	stream, err := client.Tunnel(context.Background())
+	if err != nil {
+		t.Fatalf("Tunnel: %v", err)
+	}
+	if err := stream.Send(&unwedgev1.TunnelChunk{}); err != nil { // open (configured host)
+		t.Fatalf("open: %v", err)
+	}
+	const want = "hello world"
+	if err := stream.Send(&unwedgev1.TunnelChunk{Data: []byte(want)}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	var got []byte
+	for len(got) < len(want) {
+		msg, err := stream.Recv()
+		if err != nil {
+			t.Fatalf("recv (got %q): %v", got, err)
+		}
+		got = append(got, msg.GetData()...)
+	}
+	if string(got) != want {
+		t.Fatalf("echo = %q, want %q", got, want)
+	}
+	_ = stream.CloseSend()
+}
+
+func TestNewSSHRPCsRequireSSH(t *testing.T) {
+	client := startTestServer(t, Deps{}) // SSH not configured
+
+	ts, err := client.Tunnel(context.Background())
+	if err != nil {
+		t.Fatalf("Tunnel: %v", err)
+	}
+	_ = ts.Send(&unwedgev1.TunnelChunk{})
+	if _, err := ts.Recv(); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("Tunnel err = %v, want FailedPrecondition", err)
+	}
+
+	ds, err := client.SCPDownload(context.Background(), &unwedgev1.SCPDownloadRequest{RemotePath: "/x"})
+	if err != nil {
+		t.Fatalf("SCPDownload: %v", err)
+	}
+	if _, err := ds.Recv(); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("SCPDownload err = %v, want FailedPrecondition", err)
+	}
+
+	us, err := client.SCPUpload(context.Background())
+	if err != nil {
+		t.Fatalf("SCPUpload: %v", err)
+	}
+	_ = us.Send(&unwedgev1.SCPUploadRequest{Payload: &unwedgev1.SCPUploadRequest_Metadata_{
+		Metadata: &unwedgev1.SCPUploadRequest_Metadata{RemotePath: "/x"},
+	}})
+	if _, err := us.CloseAndRecv(); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("SCPUpload err = %v, want FailedPrecondition", err)
 	}
 }
