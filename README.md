@@ -93,6 +93,28 @@ vEdge 1000 U-Boot (prompt `=>`, interrupt on `Hit ctrl-x to stop booting`,
 
 ## CLI examples
 
+The client reads its daemon address and TLS material from three layers, in
+precedence order **flag > environment > config file > built-in default**, so you
+can prime the common values once and keep just the subcommand on the command
+line. Point at a config file with `-config` or `UNWEDGE_CONFIG`; otherwise
+`~/.config/unwedge/config.yaml` is loaded when present (`$XDG_CONFIG_HOME` is
+honored). Paths may use `~`. The daemon port defaults to `7777`, so `addr` can
+omit it.
+
+```yaml
+# ~/.config/unwedge/config.yaml
+addr: unwedge-oob-lab-sw1.sonix.network   # :7777 is implied
+ca:   ~/unwedge/ca.crt
+cert: ~/unwedge/unwedge-bastion.crt
+key:  ~/unwedge/unwedge-bastion.key
+# server_name: ""   # override TLS server name
+# no_tls: false     # connect without TLS (local/testing)
+# insecure: false   # skip server cert verification (dev only)
+```
+
+With that primed, the long invocation collapses to just `unwedge status`. The
+equivalent environment overrides (which win over the file) are:
+
 ```sh
 export UNWEDGE_ADDR=controller.example:7777
 export UNWEDGE_CA=certs/ca.crt UNWEDGE_CERT=certs/client.crt UNWEDGE_KEY=certs/client.key
@@ -160,6 +182,9 @@ Example Claude Code / MCP client config:
 }
 ```
 
+`unwedge-mcp` shares the CLI's config resolution, so if `~/.config/unwedge/config.yaml`
+(or `UNWEDGE_CONFIG`) is already primed you can drop the `args` and `env` here.
+
 ## CI: gate the OpenWrt weekly release on a real boot
 
 This repo ships a composite GitHub Action (`action.yml`). Add it as the final
@@ -181,9 +206,10 @@ internal/
   sshexec/            SSH command execution
   server/             gRPC service wiring
   client/             shared gRPC client (CLI + MCP)
+  clientconfig/       client-side defaults (addr/ca/cert/key) file + env
   smoke/              release smoke-test engine
   mcp/                minimal MCP stdio server
-  config/  tlsutil/   config loading, TLS credentials
+  config/  tlsutil/   daemon config loading, TLS credentials
 cmd/                  unwedged, unwedge, unwedge-mcp
 ```
 

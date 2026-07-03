@@ -18,6 +18,7 @@ import (
 
 	unwedgev1 "github.com/sonix-network/unwedge/gen/unwedge/v1"
 	"github.com/sonix-network/unwedge/internal/client"
+	"github.com/sonix-network/unwedge/internal/clientconfig"
 	"github.com/sonix-network/unwedge/internal/smoke"
 )
 
@@ -47,14 +48,25 @@ Commands:
 Global flags:`
 
 func realMain() int {
+	// Load client defaults (daemon address, TLS material) from the config file
+	// and environment so they can be primed once. Precedence: flag > env >
+	// config file > built-in default. A -config flag or UNWEDGE_CONFIG picks the
+	// file; otherwise ~/.config/unwedge/config.yaml is used if present.
+	def, err := clientconfig.Resolve(clientconfig.PreScanConfig(os.Args[1:]))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		return 1
+	}
+
 	fs := flag.NewFlagSet("unwedge", flag.ContinueOnError)
-	addr := fs.String("addr", envOr("UNWEDGE_ADDR", "localhost:7777"), "daemon address host:port")
-	ca := fs.String("ca", os.Getenv("UNWEDGE_CA"), "CA cert file verifying the server")
-	cert := fs.String("cert", os.Getenv("UNWEDGE_CERT"), "client cert file (mTLS)")
-	key := fs.String("key", os.Getenv("UNWEDGE_KEY"), "client key file (mTLS)")
-	serverName := fs.String("server-name", os.Getenv("UNWEDGE_SERVER_NAME"), "override TLS server name")
-	insecureSkip := fs.Bool("insecure", false, "skip server certificate verification (dev only)")
-	noTLS := fs.Bool("no-tls", false, "connect without TLS (local/testing only)")
+	fs.String("config", clientconfig.DefaultPath(), "client config file (YAML) with addr/ca/cert/key defaults")
+	addr := fs.String("addr", def.Addr, "daemon address host:port (port defaults to "+clientconfig.DefaultPort+")")
+	ca := fs.String("ca", def.CA, "CA cert file verifying the server")
+	cert := fs.String("cert", def.Cert, "client cert file (mTLS)")
+	key := fs.String("key", def.Key, "client key file (mTLS)")
+	serverName := fs.String("server-name", def.ServerName, "override TLS server name")
+	insecureSkip := fs.Bool("insecure", def.Insecure, "skip server certificate verification (dev only)")
+	noTLS := fs.Bool("no-tls", def.NoTLS, "connect without TLS (local/testing only)")
 	keys := fs.String("keys", "", "comma-separated control keys for 'write' (e.g. ctrl-x,enter)")
 	out := fs.String("out", "", "output file for 'smoke' boot log (default stdout)")
 	kernelArgs := fs.String("kernel-args", "", "extra kernel args for netboot/smoke")
@@ -72,6 +84,7 @@ func realMain() int {
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		return 2
 	}
+	*addr = clientconfig.EnsurePort(*addr, clientconfig.DefaultPort)
 	args := fs.Args()
 	if len(args) == 0 {
 		fs.Usage()
@@ -466,11 +479,4 @@ func maybeAcquire(ctx context.Context, cl *client.Client, owner string, wait tim
 		defer cancel()
 		_ = cl.Release(rctx)
 	}, nil
-}
-
-func envOr(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
 }

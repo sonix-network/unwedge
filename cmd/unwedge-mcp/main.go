@@ -20,6 +20,7 @@ import (
 
 	unwedgev1 "github.com/sonix-network/unwedge/gen/unwedge/v1"
 	"github.com/sonix-network/unwedge/internal/client"
+	"github.com/sonix-network/unwedge/internal/clientconfig"
 	"github.com/sonix-network/unwedge/internal/mcp"
 	"github.com/sonix-network/unwedge/internal/smoke"
 )
@@ -34,16 +35,26 @@ func main() {
 }
 
 func run() error {
-	addr := flag.String("addr", envOr("UNWEDGE_ADDR", "localhost:7777"), "daemon address host:port")
-	ca := flag.String("ca", os.Getenv("UNWEDGE_CA"), "CA cert verifying the server")
-	cert := flag.String("cert", os.Getenv("UNWEDGE_CERT"), "client cert (mTLS)")
-	key := flag.String("key", os.Getenv("UNWEDGE_KEY"), "client key (mTLS)")
-	serverName := flag.String("server-name", os.Getenv("UNWEDGE_SERVER_NAME"), "override TLS server name")
-	insecure := flag.Bool("insecure", false, "skip server cert verification (dev only)")
-	noTLS := flag.Bool("no-tls", false, "connect without TLS (local/testing only)")
+	// Client defaults (daemon address, TLS material) load from the config file
+	// and environment; precedence is flag > env > config file > built-in. A
+	// -config flag or UNWEDGE_CONFIG picks the file, else ~/.config/unwedge/config.yaml.
+	def, err := clientconfig.Resolve(clientconfig.PreScanConfig(os.Args[1:]))
+	if err != nil {
+		return err
+	}
+
+	flag.String("config", clientconfig.DefaultPath(), "client config file (YAML) with addr/ca/cert/key defaults")
+	addr := flag.String("addr", def.Addr, "daemon address host:port (port defaults to "+clientconfig.DefaultPort+")")
+	ca := flag.String("ca", def.CA, "CA cert verifying the server")
+	cert := flag.String("cert", def.Cert, "client cert (mTLS)")
+	key := flag.String("key", def.Key, "client key (mTLS)")
+	serverName := flag.String("server-name", def.ServerName, "override TLS server name")
+	insecure := flag.Bool("insecure", def.Insecure, "skip server cert verification (dev only)")
+	noTLS := flag.Bool("no-tls", def.NoTLS, "connect without TLS (local/testing only)")
 	sessionOwner := flag.String("session-owner", "", "hardware-lock owner label (default: unwedge-mcp@host)")
 	sessionWait := flag.Duration("session-wait", 10*time.Minute, "how long a tool call waits for the hardware lock if held")
 	flag.Parse()
+	*addr = clientconfig.EnsurePort(*addr, clientconfig.DefaultPort)
 
 	cl, err := client.Dial(client.Options{
 		Address: *addr, NoTLS: *noTLS, CAFile: *ca, CertFile: *cert, KeyFile: *key,
@@ -552,11 +563,4 @@ func ensureSession(ctx context.Context, cl *client.Client, owner string, wait ti
 func sessionLost(err error) bool {
 	return status.Code(err) == codes.FailedPrecondition &&
 		strings.Contains(strings.ToLower(status.Convert(err).Message()), "session")
-}
-
-func envOr(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
 }
