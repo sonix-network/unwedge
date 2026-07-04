@@ -269,6 +269,121 @@ func TestConsoleResetKeepsLiveSubscriber(t *testing.T) {
 	}
 }
 
+// TestSlowSubscriberDetachKeepsConsoleOpen pins the invariant WaitForPattern's
+// recovery relies on: a subscriber detached for being too slow has only its own
+// channel closed; the console itself stays open (Err() == nil). This is what
+// lets WaitForPattern tell a transient detach apart from a real console close.
+func TestSlowSubscriberDetachKeepsConsoleOpen(t *testing.T) {
+	defer setSubChanCap(4)()
+
+	fc := newFakeConn()
+	c := New(fc, 1<<20)
+	defer c.Close()
+
+	sub := c.Subscribe(0) // deliberately never drained
+
+	// Feed more full-size chunks than the queue can hold. Each is 4096 bytes so
+	// the reader publishes them as separate chunks (no coalescing) and the
+	// undrained subscriber's bounded queue overflows.
+	chunk := bytes.Repeat([]byte("x"), 4096)
+	for i := 0; i < subChanCap*3; i++ {
+		fc.feed(chunk)
+	}
+
+	// The subscription channel is eventually closed by the detach.
+	waitFor(t, func() bool {
+		for {
+			select {
+			case _, ok := <-sub.C():
+				if !ok {
+					return true
+				}
+				// drained a buffered chunk; keep looking for the close
+			default:
+				return false
+			}
+		}
+	})
+	if err := c.Err(); err != nil {
+		t.Fatalf("console must stay open after a slow-subscriber detach, got Err()=%v", err)
+	}
+}
+
+// TestWaitForPatternSurvivesOutputBurst is the regression for issue #28: a heavy
+// burst of console output must not make WaitForPattern abort with
+// "serialconsole: closed" while the console is alive. The waiter must keep
+// scanning (recovering via re-subscribe if its queue overflows) and match the
+// marker that appears once output settles.
+func TestWaitForPatternSurvivesOutputBurst(t *testing.T) {
+	// A tiny queue makes a detach likely so the recovery path is exercised; a
+	// large ring holds the whole burst so a replay-on-recovery can find the marker.
+	defer setSubChanCap(2)()
+
+	fc := newFakeConn()
+	c := New(fc, 8<<20)
+	defer c.Close()
+
+	re := regexp.MustCompile(`Please press Enter to activate`)
+	type res struct {
+		m string
+		e error
+	}
+	done := make(chan res, 1)
+	go func() {
+		m, _, e := c.WaitForPatternTimeout(re, 0, 5*time.Second)
+		done <- res{m, e}
+	}()
+
+	// Sustained boot chatter that does not contain the marker.
+	noise := bytes.Repeat([]byte("boot: initializing subsystem ....................\n"), 100)
+	for i := 0; i < 400; i++ {
+		fc.feed(noise)
+	}
+	// The marker finally appears when the console quiets down.
+	fc.feed([]byte("procd: - init -\nPlease press Enter to activate this console.\n"))
+
+	select {
+	case r := <-done:
+		if r.e != nil {
+			t.Fatalf("wait aborted during output burst: %v", r.e)
+		}
+		if r.m != "Please press Enter to activate" {
+			t.Fatalf("got match %q", r.m)
+		}
+	case <-time.After(7 * time.Second):
+		t.Fatal("timed out; wait did not survive the output burst")
+	}
+	if err := c.Err(); err != nil {
+		t.Fatalf("console closed unexpectedly: %v", err)
+	}
+}
+
+// TestPatternScannerIncremental checks the incremental scanner matches patterns
+// split across feeds and spanning a chunk boundary without rescanning the whole
+// window each time.
+func TestPatternScannerIncremental(t *testing.T) {
+	sc := &patternScanner{re: regexp.MustCompile(`Hit ctrl-x to stop booting`)}
+	if _, ok := sc.feed([]byte("U-Boot 2013.07\n")); ok {
+		t.Fatal("unexpected early match")
+	}
+	if _, ok := sc.feed([]byte("Hit ctrl-x to ")); ok {
+		t.Fatal("unexpected match on partial pattern")
+	}
+	m, ok := sc.feed([]byte("stop booting 0\n"))
+	if !ok {
+		t.Fatal("pattern spanning two feeds not matched")
+	}
+	if m != "Hit ctrl-x to stop booting" {
+		t.Fatalf("got match %q", m)
+	}
+}
+
+func setSubChanCap(n int) func() {
+	old := subChanCap
+	subChanCap = n
+	return func() { subChanCap = old }
+}
+
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)

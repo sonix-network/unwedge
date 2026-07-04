@@ -19,7 +19,9 @@ const DefaultBufferBytes = 1 << 20 // 1 MiB
 
 // subChanCap bounds how much un-consumed data a single subscriber may queue
 // before it is considered too slow and detached. Each queued item is a chunk.
-const subChanCap = 1024
+// It is a var (not a const) only so tests can lower it to exercise the
+// slow-subscriber detach path deterministically.
+var subChanCap = 1024
 
 // ErrClosed is returned once the console transport has been closed.
 var ErrClosed = errors.New("serialconsole: closed")
@@ -176,6 +178,15 @@ func (c *Console) BufferedBytes() int {
 	return c.ring.size
 }
 
+// TotalWritten reports the total number of bytes ever published to the console
+// (monotonic, except it is cleared by Reset). WaitForPattern uses it to bound
+// how much output it missed if its subscription is detached mid-wait.
+func (c *Console) TotalWritten() int64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.ring.totalIn
+}
+
 // Subscription is a live feed of console output.
 type Subscription struct {
 	c  *Console
@@ -229,41 +240,120 @@ func (s *Subscription) Close() {
 // pattern spanning a boundary can still match.
 const maxPatternWindow = 1 << 20
 
+// patternScanOverlap is how far back of already-scanned data each incremental
+// scan re-examines, so a match straddling the boundary between two chunks is
+// still found. It bounds the longest pattern match that can span a chunk
+// boundary; boot markers are far shorter than this.
+const patternScanOverlap = 64 << 10
+
+// patternScanner accumulates console output and searches it for a regexp
+// incrementally: each new chunk is scanned together with only a bounded overlap
+// of previously-scanned data, so scanning stays cheap no matter how much output
+// has flowed. That keeps the pattern-waiter from becoming a slow subscriber.
+type patternScanner struct {
+	re      *regexp.Regexp
+	acc     []byte
+	scanned int // bytes of acc already searched (excluding the re-examined overlap)
+}
+
+// feed appends a chunk and returns the match if one has now appeared.
+func (s *patternScanner) feed(chunk []byte) (string, bool) {
+	s.acc = append(s.acc, chunk...)
+	return s.scan()
+}
+
+// scan searches the not-yet-searched tail (plus the overlap) for the pattern.
+func (s *patternScanner) scan() (string, bool) {
+	start := s.scanned - patternScanOverlap
+	if start < 0 {
+		start = 0
+	}
+	if loc := s.re.FindIndex(s.acc[start:]); loc != nil {
+		return string(s.acc[start+loc[0] : start+loc[1]]), true
+	}
+	s.scanned = len(s.acc)
+	if len(s.acc) > maxPatternWindow {
+		// Bound memory: keep the tail (with overlap) so boundary matches still work.
+		keep := maxPatternWindow / 2
+		dropped := len(s.acc) - keep
+		s.acc = append([]byte(nil), s.acc[dropped:]...)
+		if s.scanned -= dropped; s.scanned < 0 {
+			s.scanned = 0
+		}
+	}
+	return "", false
+}
+
+// reset discards accumulated data, e.g. before replaying a fresh snapshot.
+func (s *patternScanner) reset() {
+	s.acc = s.acc[:0]
+	s.scanned = 0
+}
+
 // WaitForPattern blocks until re matches console output or ctx is done. If
 // includeScrollback>0, that many bytes of existing scrollback are considered
 // first. On match it returns the matched text and the accumulated context.
+//
+// If the pattern-waiter is detached for being a slow subscriber (an extreme
+// output burst overflowing its queue) while the console is still open, it
+// transparently re-subscribes and replays the output it missed rather than
+// reporting the console as closed: such a detach is transient, and only a
+// genuine transport close (c.Err() != nil) is fatal. This is what lets a
+// wait_for_pattern armed across a target reboot survive the burst of boot output
+// without aborting with "serialconsole: closed". See issue #28.
 func (c *Console) WaitForPattern(ctx context.Context, re *regexp.Regexp, includeScrollback int) (match string, contextOut []byte, err error) {
-	sub := c.Subscribe(includeScrollback)
-	defer sub.Close()
+	// armTotal marks how many bytes had been published when we armed, so a
+	// re-subscribe after a detach replays only post-arm output (never pre-arm
+	// history the caller did not ask to include).
+	armTotal := c.TotalWritten()
+	sc := &patternScanner{re: re}
 
-	var acc []byte
-	scan := func() (string, bool) {
-		if loc := re.FindIndex(acc); loc != nil {
-			return string(acc[loc[0]:loc[1]]), true
+	replay := includeScrollback
+	for {
+		sub := c.Subscribe(replay)
+		matched, m, retry := c.drainInto(ctx, sub, sc)
+		sub.Close()
+		if matched {
+			return m, sc.acc, nil
 		}
-		return "", false
+		if ctx.Err() != nil {
+			return "", sc.acc, ctx.Err()
+		}
+		if !retry {
+			// The subscription ended and the console is genuinely closed.
+			return "", sc.acc, ErrClosed
+		}
+		// Detached as a slow subscriber while the console is still alive. Re-arm,
+		// replaying the output published since we started (bounded by the ring), so
+		// a pattern that flew by during the gap is not missed. Reset the
+		// accumulator; the replayed snapshot supersedes it.
+		missed := c.TotalWritten() - armTotal
+		if missed > maxPatternWindow {
+			missed = maxPatternWindow
+		}
+		replay = int(missed)
+		sc.reset()
 	}
+}
 
+// drainInto feeds one subscription's output into sc. It returns matched=true
+// with the match on success. Otherwise retry reports how the subscription ended:
+// true if the subscriber was detached for being slow while the console is still
+// open (the caller should re-subscribe), false if the console itself closed or
+// ctx fired.
+func (c *Console) drainInto(ctx context.Context, sub *Subscription, sc *patternScanner) (matched bool, match string, retry bool) {
 	for {
 		select {
 		case <-ctx.Done():
-			return "", acc, ctx.Err()
+			return false, "", false
 		case chunk, ok := <-sub.C():
 			if !ok {
-				// Console closed; do a final scan then report closure.
-				if m, found := scan(); found {
-					return m, acc, nil
-				}
-				return "", acc, ErrClosed
+				// A detach for slowness closes only this subscriber; the console
+				// stays open (c.Err() == nil). A real transport close sets Err.
+				return false, "", c.Err() == nil
 			}
-			acc = append(acc, chunk...)
-			if m, found := scan(); found {
-				return m, acc, nil
-			}
-			if len(acc) > maxPatternWindow {
-				// Keep the tail so boundary-spanning matches still work.
-				keep := maxPatternWindow / 2
-				acc = append([]byte(nil), acc[len(acc)-keep:]...)
+			if m, found := sc.feed(chunk); found {
+				return true, m, false
 			}
 		}
 	}
