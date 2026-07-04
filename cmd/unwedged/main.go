@@ -93,7 +93,10 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("configure power: %w", err)
 		}
-		pwr = apc
+		// Clear the console scrollback whenever power is removed. Without this the
+		// 1 MiB ring accumulates every boot, so reading the log after a power cycle
+		// shows a confusing stack of previous boots instead of just the fresh one.
+		pwr = power.Hook(apc, console.Reset)
 		logger.Info("power control configured", "pdu", cfg.Power.Address, "outlet", cfg.Power.Outlet)
 	} else {
 		logger.Warn("power control not configured (no power.address); power-cycle disabled")

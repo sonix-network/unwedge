@@ -158,6 +158,17 @@ func (c *Console) Snapshot(maxBytes int) (data []byte, truncated bool) {
 	return c.ring.snapshot(maxBytes)
 }
 
+// Reset clears the scrollback ring so subsequent Snapshot calls and
+// replay-on-Subscribe start empty. Live subscribers are NOT affected: their
+// channels keep receiving new data with no interruption. This is used to drop
+// pre-power-cycle output so a freshly booted target's log starts clean instead
+// of trailing every previous boot.
+func (c *Console) Reset() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ring.reset()
+}
+
 // BufferedBytes reports how many bytes are currently in scrollback.
 func (c *Console) BufferedBytes() int {
 	c.mu.Lock()

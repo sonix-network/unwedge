@@ -214,6 +214,61 @@ func TestConsoleCloseClosesSubscribers(t *testing.T) {
 	}
 }
 
+func TestConsoleResetClearsScrollback(t *testing.T) {
+	fc := newFakeConn()
+	c := New(fc, 4096)
+	defer c.Close()
+
+	fc.feed([]byte("previous boot output"))
+	waitFor(t, func() bool {
+		s, _ := c.Snapshot(0)
+		return string(s) == "previous boot output"
+	})
+
+	c.Reset()
+	if s, trunc := c.Snapshot(0); len(s) != 0 || trunc {
+		t.Fatalf("after reset snapshot=%q trunc=%v, want empty", s, trunc)
+	}
+	if n := c.BufferedBytes(); n != 0 {
+		t.Fatalf("after reset BufferedBytes=%d, want 0", n)
+	}
+
+	// New output after the reset is captured as a clean log.
+	fc.feed([]byte("fresh boot"))
+	waitFor(t, func() bool {
+		s, _ := c.Snapshot(0)
+		return string(s) == "fresh boot"
+	})
+}
+
+func TestConsoleResetKeepsLiveSubscriber(t *testing.T) {
+	fc := newFakeConn()
+	c := New(fc, 4096)
+	defer c.Close()
+
+	sub := c.Subscribe(0)
+	defer sub.Close()
+
+	// A reset must not interrupt an already-attached live feed: it only clears
+	// scrollback, so a StreamConsole started before a power cycle keeps flowing.
+	c.Reset()
+	fc.feed([]byte("post-reset"))
+
+	var got []byte
+	deadline := time.After(2 * time.Second)
+	for string(got) != "post-reset" {
+		select {
+		case chunk, ok := <-sub.C():
+			if !ok {
+				t.Fatalf("subscriber closed by reset; got %q", got)
+			}
+			got = append(got, chunk...)
+		case <-deadline:
+			t.Fatalf("got %q, want post-reset", got)
+		}
+	}
+}
+
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
