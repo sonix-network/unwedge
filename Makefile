@@ -41,6 +41,15 @@ release: daemon-mips64
 	GOOS=darwin GOARCH=arm64 $(GO) build -ldflags '$(LDFLAGS)' -o $(BIN)/unwedge-mcp.darwin-arm64 ./cmd/unwedge-mcp
 	@echo "release binaries in $(BIN)/"
 
+# Release binaries must be statically linked. Built natively on amd64, `go build`
+# defaults to CGO on and dynamically links glibc, which OpenWrt's musl-based
+# x86_64 packaging rejects ("missing dependencies for the following libraries:
+# libc.so.6"); the cross-built arches have no C toolchain so they are already
+# static. unwedge is pure Go, so disabling cgo is safe and keeps every arch
+# consistently static and portable. (The race target needs cgo, so it is left
+# to inherit the default.)
+release dist: export CGO_ENABLED := 0
+
 # Architectures for which we publish prebuilt release tarballs. mips64 is the
 # vEdge 1000 controller (big-endian); the others are for running the client/MCP.
 DIST_ARCHES ?= mips64 amd64 arm64
