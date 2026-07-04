@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # Temporary diagnostic: a dig-equivalent raw DNS probe using only the stdlib,
 # for hosts where dig/nslookup aren't installed. Queries the system resolvers
-# (from /etc/resolv.conf) and a couple of public resolvers for the AAAA/A of
-# $HOST, and prints the response RCODE + answers per server. The queried name
-# is never printed (it may come from a secret); only the resolved addresses are.
+# (from /etc/resolv.conf) and a couple of public resolvers for the AAAA/A/CNAME
+# of $HOST, and prints the response RCODE + answers per server. The queried name
+# is never printed (it may come from a secret); only resolved addresses are.
 import os
 import socket
 import struct
 
 RCODES = {0: "NOERROR", 1: "FORMERR", 2: "SERVFAIL", 3: "NXDOMAIN",
           4: "NOTIMP", 5: "REFUSED"}
-QTYPE = {1: "A", 28: "AAAA"}
+QTYPE = {1: "A", 28: "AAAA", 5: "CNAME"}
 
 
 def build_query(qname, qtype):
@@ -79,13 +79,20 @@ def resolv_nameservers():
 
 def main():
     host = os.environ["HOST"]
-    print("Probing for the controller host (name masked). qtypes: AAAA, A")
+    labels = host.rstrip(".").split(".")
+    # Safe fingerprint so we can confirm what's actually being queried without
+    # leaking the (secret) name: label count, TLD, length, IP-literal checks.
+    print("HOST fingerprint: labels=%d tld=%r len=%d looks_ipv6=%s brackets=%s"
+          % (len(labels), labels[-1] if labels else "", len(host),
+             "::" in host, host.startswith("[")))
+    print("Probing (name masked). qtypes: AAAA=28, A=1, CNAME=5")
     for ns in resolv_nameservers():
-        query(ns, host, 28, "system %s AAAA" % ns)
-        query(ns, host, 1, "system %s A" % ns)
+        for qt in (28, 1, 5):
+            query(ns, host, qt, "system %s %s" % (ns, QTYPE.get(qt, qt)))
     for pub, name in [("2606:4700:4700::1111", "cloudflare"),
                       ("2001:4860:4860::8888", "google")]:
-        query(pub, host, 28, "%s AAAA" % name)
+        for qt in (28, 1, 5):
+            query(pub, host, qt, "%s %s" % (name, QTYPE.get(qt, qt)))
 
 
 if __name__ == "__main__":
