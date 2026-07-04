@@ -386,7 +386,7 @@ func (s *Service) SSHExec(ctx context.Context, req *unwedgev1.SSHExecRequest) (*
 	if s.deps.SSH == nil {
 		return nil, status.Error(codes.FailedPrecondition, "ssh not configured")
 	}
-	res, err := s.deps.SSH.Exec(ctx, req.GetHostOverride(), req.GetCommand(), dur(req.GetTimeoutMs(), 30*time.Second))
+	res, err := s.deps.SSH.Exec(ctx, req.GetCommand(), dur(req.GetTimeoutMs(), 30*time.Second))
 	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "ssh: %v", err)
 	}
@@ -399,20 +399,20 @@ func (s *Service) SSHExec(ctx context.Context, req *unwedgev1.SSHExecRequest) (*
 }
 
 // Tunnel proxies raw bytes between the caller and a TCP connection the daemon
-// opens to the target's SSH port (or an override). SSH authentication is
-// end-to-end between the caller's local client and the target; the daemon only
-// shuffles bytes, which is what lets a local ssh/scp use it as a ProxyCommand.
+// opens to the target's configured SSH port. SSH authentication is end-to-end
+// between the caller's local client and the target; the daemon only shuffles
+// bytes, which is what lets a local ssh/scp use it as a ProxyCommand.
 func (s *Service) Tunnel(stream unwedgev1.Unwedge_TunnelServer) error {
 	if s.deps.SSH == nil {
 		return status.Error(codes.FailedPrecondition, "ssh not configured")
 	}
 	ctx := stream.Context()
-	// The first message selects the dial target and may carry initial bytes.
+	// The first message opens the tunnel and may carry initial bytes.
 	first, err := stream.Recv()
 	if err != nil {
 		return err
 	}
-	conn, err := s.deps.SSH.DialTCP(ctx, first.GetHostOverride())
+	conn, err := s.deps.SSH.DialTCP(ctx)
 	if err != nil {
 		return status.Errorf(codes.Unavailable, "tunnel dial: %v", err)
 	}
@@ -507,7 +507,7 @@ func (s *Service) SCPUpload(stream unwedgev1.Unwedge_SCPUploadServer) error {
 		}
 	}()
 
-	err = s.deps.SSH.SCPUpload(stream.Context(), meta.GetHostOverride(), meta.GetRemotePath(),
+	err = s.deps.SSH.SCPUpload(stream.Context(), meta.GetRemotePath(),
 		os.FileMode(meta.GetMode()), meta.GetSize(), pr, dur(meta.GetTimeoutMs(), 5*time.Minute))
 	pr.CloseWithError(err) // stop the receiver goroutine if it is still writing
 	if err != nil {
@@ -525,7 +525,7 @@ func (s *Service) SCPDownload(req *unwedgev1.SCPDownloadRequest, stream unwedgev
 	if req.GetRemotePath() == "" {
 		return status.Error(codes.InvalidArgument, "remote_path required")
 	}
-	err := s.deps.SSH.SCPDownload(stream.Context(), req.GetHostOverride(), req.GetRemotePath(),
+	err := s.deps.SSH.SCPDownload(stream.Context(), req.GetRemotePath(),
 		dur(req.GetTimeoutMs(), 5*time.Minute),
 		func(meta sshexec.SCPMeta, body io.Reader) error {
 			if serr := stream.Send(&unwedgev1.SCPDownloadResponse{

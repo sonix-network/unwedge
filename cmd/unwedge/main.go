@@ -133,7 +133,6 @@ func realMain() int {
 	subPowerCycle := sub.Bool("power-cycle", *powerCycle, "power-cycle and stop at the U-Boot prompt before netboot/interrupt/uboot")
 	subTimeout := sub.Duration("timeout", *timeout, "overall timeout for the command")
 	subProxy := sub.Bool("W", false, "'ssh' proxy mode: pipe stdin/stdout to the target's SSH port (ProxyCommand)")
-	subHost := sub.String("host", "", "override the target host (host[:port]) for 'ssh'/'scp'")
 	if err := sub.Parse(rest); err != nil {
 		return 2
 	}
@@ -141,7 +140,7 @@ func realMain() int {
 	opts := cmdOpts{
 		keys: *subKeys, out: *subOut, kernelArgs: *subKernelArgs,
 		verify: *subVerify, powerCycle: *subPowerCycle, timeout: *subTimeout,
-		proxy: *subProxy, host: *subHost,
+		proxy: *subProxy,
 	}
 
 	// Acquire the exclusive hardware lock for operational commands. Read-only
@@ -180,7 +179,6 @@ type cmdOpts struct {
 	powerCycle bool
 	timeout    time.Duration
 	proxy      bool
-	host       string
 }
 
 func dispatch(ctx context.Context, cl *client.Client, cmd string, args []string, o cmdOpts) error {
@@ -412,20 +410,17 @@ func cmdImage(ctx context.Context, cl *client.Client, args []string) error {
 func cmdSSH(ctx context.Context, cl *client.Client, args []string, o cmdOpts) error {
 	// Proxy mode (-W): tunnel raw SSH bytes so a local ssh/scp can reach the
 	// target through the daemon, e.g. ssh -o ProxyCommand="unwedge ssh -W".
-	// No command timeout applies; the session runs until either end closes.
+	// No command timeout applies; the session runs until either end closes. Any
+	// host:port args (e.g. OpenSSH's %h:%p) are ignored: the daemon always dials
+	// its server-configured SSH target.
 	if o.proxy {
-		host := o.host
-		if len(args) > 0 {
-			host = args[0] // optional host:port (e.g. OpenSSH's %h:%p)
-		}
-		return cl.Tunnel(ctx, host, os.Stdin, os.Stdout)
+		return cl.Tunnel(ctx, os.Stdin, os.Stdout)
 	}
 	if len(args) == 0 {
 		return fmt.Errorf("ssh requires a command (or -W for proxy mode)")
 	}
 	resp, err := cl.API.SSHExec(ctx, &unwedgev1.SSHExecRequest{
 		Command: strings.Join(args, " "), TimeoutMs: o.timeout.Milliseconds(),
-		HostOverride: o.host,
 	})
 	if err != nil {
 		return err
@@ -452,14 +447,14 @@ func cmdSCP(ctx context.Context, cl *client.Client, args []string, o cmdOpts) er
 	srcRemote, dstRemote := strings.HasPrefix(src, ":"), strings.HasPrefix(dst, ":")
 	switch {
 	case srcRemote && !dstRemote:
-		n, err := cl.SCPDownloadFile(ctx, strings.TrimPrefix(src, ":"), dst, o.host, o.timeout)
+		n, err := cl.SCPDownloadFile(ctx, strings.TrimPrefix(src, ":"), dst, o.timeout)
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "downloaded %d bytes to %s\n", n, dst)
 		return nil
 	case dstRemote && !srcRemote:
-		n, err := cl.SCPUploadFile(ctx, src, strings.TrimPrefix(dst, ":"), o.host, o.timeout)
+		n, err := cl.SCPUploadFile(ctx, src, strings.TrimPrefix(dst, ":"), o.timeout)
 		if err != nil {
 			return err
 		}

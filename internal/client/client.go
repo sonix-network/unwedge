@@ -284,17 +284,17 @@ func (c *Client) InterruptBoot(ctx context.Context, req *unwedgev1.InterruptBoot
 	return drainBootEvents(stream, h)
 }
 
-// Tunnel proxies a raw byte stream between in/out and the target's SSH port
-// (or hostOverride "host[:port]") through the daemon, returning when either end
-// closes. It backs an OpenSSH ProxyCommand so a local ssh/scp can reach the
-// target through the daemon.
-func (c *Client) Tunnel(ctx context.Context, hostOverride string, in io.Reader, out io.Writer) error {
+// Tunnel proxies a raw byte stream between in/out and the target's configured
+// SSH port through the daemon, returning when either end closes. It backs an
+// OpenSSH ProxyCommand so a local ssh/scp can reach the target through the
+// daemon.
+func (c *Client) Tunnel(ctx context.Context, in io.Reader, out io.Writer) error {
 	stream, err := c.API.Tunnel(ctx)
 	if err != nil {
 		return err
 	}
-	// The first message opens the tunnel and selects the dial target.
-	if err := stream.Send(&unwedgev1.TunnelChunk{HostOverride: hostOverride}); err != nil {
+	// The first message opens the tunnel.
+	if err := stream.Send(&unwedgev1.TunnelChunk{}); err != nil {
 		return err
 	}
 	errc := make(chan error, 2)
@@ -342,7 +342,7 @@ func (c *Client) Tunnel(ctx context.Context, hostOverride string, in io.Reader, 
 
 // SCPUploadFile copies localPath to remotePath on the target over the classic
 // scp protocol and returns the number of bytes written.
-func (c *Client) SCPUploadFile(ctx context.Context, localPath, remotePath, hostOverride string, timeout time.Duration) (int64, error) {
+func (c *Client) SCPUploadFile(ctx context.Context, localPath, remotePath string, timeout time.Duration) (int64, error) {
 	f, err := os.Open(localPath)
 	if err != nil {
 		return 0, fmt.Errorf("client: open %s: %w", localPath, err)
@@ -362,11 +362,10 @@ func (c *Client) SCPUploadFile(ctx context.Context, localPath, remotePath, hostO
 	if err := stream.Send(&unwedgev1.SCPUploadRequest{
 		Payload: &unwedgev1.SCPUploadRequest_Metadata_{
 			Metadata: &unwedgev1.SCPUploadRequest_Metadata{
-				RemotePath:   remotePath,
-				Size:         fi.Size(),
-				Mode:         uint32(fi.Mode().Perm()),
-				TimeoutMs:    timeout.Milliseconds(),
-				HostOverride: hostOverride,
+				RemotePath: remotePath,
+				Size:       fi.Size(),
+				Mode:       uint32(fi.Mode().Perm()),
+				TimeoutMs:  timeout.Milliseconds(),
 			},
 		},
 	}); err != nil {
@@ -399,11 +398,10 @@ func (c *Client) SCPUploadFile(ctx context.Context, localPath, remotePath, hostO
 // SCPDownloadFile copies remotePath from the target to localPath over the
 // classic scp protocol and returns the number of bytes written. The local file
 // is created with the mode the target reports.
-func (c *Client) SCPDownloadFile(ctx context.Context, remotePath, localPath, hostOverride string, timeout time.Duration) (int64, error) {
+func (c *Client) SCPDownloadFile(ctx context.Context, remotePath, localPath string, timeout time.Duration) (int64, error) {
 	stream, err := c.API.SCPDownload(ctx, &unwedgev1.SCPDownloadRequest{
-		RemotePath:   remotePath,
-		TimeoutMs:    timeout.Milliseconds(),
-		HostOverride: hostOverride,
+		RemotePath: remotePath,
+		TimeoutMs:  timeout.Milliseconds(),
 	})
 	if err != nil {
 		return 0, err

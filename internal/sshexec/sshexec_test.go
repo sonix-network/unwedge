@@ -98,7 +98,7 @@ func TestSSHExecSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	res, err := c.Exec(context.Background(), "", "uname -a", 5*time.Second)
+	res, err := c.Exec(context.Background(), "uname -a", 5*time.Second)
 	if err != nil {
 		t.Fatalf("Exec: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestSSHExecNonZeroExit(t *testing.T) {
 		return "", "boom\n", 42
 	})
 	c, _ := New(Config{Host: addr, User: "root", Password: "x"})
-	res, err := c.Exec(context.Background(), "", "false", 5*time.Second)
+	res, err := c.Exec(context.Background(), "false", 5*time.Second)
 	if err != nil {
 		t.Fatalf("Exec returned transport error: %v", err)
 	}
@@ -127,24 +127,9 @@ func TestSSHExecNonZeroExit(t *testing.T) {
 	}
 }
 
-func TestSSHExecHostOverride(t *testing.T) {
-	addr := startTestSSHServer(t, func(cmd string) (string, string, int) {
-		return "ok", "", 0
-	})
-	// Configured host is bogus; override should win.
-	c, _ := New(Config{Host: "203.0.113.1:22", User: "root", Password: "x"})
-	res, err := c.Exec(context.Background(), addr, "echo ok", 5*time.Second)
-	if err != nil {
-		t.Fatalf("Exec: %v", err)
-	}
-	if string(res.Stdout) != "ok" {
-		t.Fatalf("stdout = %q", res.Stdout)
-	}
-}
-
 func TestSSHExecNoAuth(t *testing.T) {
 	c, _ := New(Config{Host: "127.0.0.1:22", User: "root"})
-	if _, err := c.Exec(context.Background(), "", "x", time.Second); err == nil {
+	if _, err := c.Exec(context.Background(), "x", time.Second); err == nil {
 		t.Fatal("expected error with no auth configured")
 	}
 }

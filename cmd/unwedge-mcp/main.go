@@ -465,20 +465,18 @@ func registerTools(srv *mcp.Server, cl *client.Client, owner string, wait time.D
 		InputSchema: schema(obj{
 			"local_path":  obj{"type": "string", "description": "source path on the MCP host"},
 			"remote_path": obj{"type": "string", "description": "destination path on the target"},
-			"host":        obj{"type": "string", "description": "override target host (host[:port])"},
 			"timeout_ms":  obj{"type": "integer"},
 		}, "local_path", "remote_path"),
 		Handler: func(ctx context.Context, args json.RawMessage) (string, error) {
 			var a struct {
 				LocalPath  string `json:"local_path"`
 				RemotePath string `json:"remote_path"`
-				Host       string `json:"host"`
 				TimeoutMs  int64  `json:"timeout_ms"`
 			}
 			if err := json.Unmarshal(args, &a); err != nil {
 				return "", err
 			}
-			n, err := cl.SCPUploadFile(ctx, a.LocalPath, a.RemotePath, a.Host, scpTimeout(a.TimeoutMs))
+			n, err := cl.SCPUploadFile(ctx, a.LocalPath, a.RemotePath, scpTimeout(a.TimeoutMs))
 			if err != nil {
 				return "", err
 			}
@@ -493,20 +491,18 @@ func registerTools(srv *mcp.Server, cl *client.Client, owner string, wait time.D
 		InputSchema: schema(obj{
 			"remote_path": obj{"type": "string", "description": "source path on the target"},
 			"local_path":  obj{"type": "string", "description": "destination path on the MCP host"},
-			"host":        obj{"type": "string", "description": "override target host (host[:port])"},
 			"timeout_ms":  obj{"type": "integer"},
 		}, "remote_path", "local_path"),
 		Handler: func(ctx context.Context, args json.RawMessage) (string, error) {
 			var a struct {
 				RemotePath string `json:"remote_path"`
 				LocalPath  string `json:"local_path"`
-				Host       string `json:"host"`
 				TimeoutMs  int64  `json:"timeout_ms"`
 			}
 			if err := json.Unmarshal(args, &a); err != nil {
 				return "", err
 			}
-			n, err := cl.SCPDownloadFile(ctx, a.RemotePath, a.LocalPath, a.Host, scpTimeout(a.TimeoutMs))
+			n, err := cl.SCPDownloadFile(ctx, a.RemotePath, a.LocalPath, scpTimeout(a.TimeoutMs))
 			if err != nil {
 				return "", err
 			}

@@ -190,7 +190,7 @@ func TestSCPUpload(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	content := bytes.Repeat([]byte("payload\n"), 1000) // 8000 bytes
-	err = c.SCPUpload(context.Background(), "", "/tmp/dut.bin", 0o644, int64(len(content)),
+	err = c.SCPUpload(context.Background(), "/tmp/dut.bin", 0o644, int64(len(content)),
 		bytes.NewReader(content), 10*time.Second)
 	if err != nil {
 		t.Fatalf("SCPUpload: %v", err)
@@ -210,7 +210,7 @@ func TestSCPDownload(t *testing.T) {
 
 	var buf bytes.Buffer
 	var meta SCPMeta
-	err := c.SCPDownload(context.Background(), "", "/etc/data", 10*time.Second,
+	err := c.SCPDownload(context.Background(), "/etc/data", 10*time.Second,
 		func(m SCPMeta, body io.Reader) error {
 			meta = m
 			_, err := io.Copy(&buf, body)
@@ -233,7 +233,7 @@ func TestSCPDownload(t *testing.T) {
 func TestSCPDownloadMissing(t *testing.T) {
 	addr, _ := startSCPServer(t, nil)
 	c, _ := New(Config{Host: addr, User: "root", Password: "x"})
-	err := c.SCPDownload(context.Background(), "", "/nope", 10*time.Second,
+	err := c.SCPDownload(context.Background(), "/nope", 10*time.Second,
 		func(SCPMeta, io.Reader) error { return nil })
 	if err == nil {
 		t.Fatal("expected error downloading a missing file")

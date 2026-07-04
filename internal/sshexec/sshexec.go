@@ -107,17 +107,13 @@ func (c *Client) dialTimeout() time.Duration {
 	return c.cfg.DialTimeout
 }
 
-// dial establishes an SSH client to hostOverride (or the configured host if
-// empty), honoring ctx. The caller must Close the returned client.
-func (c *Client) dial(ctx context.Context, hostOverride string) (*ssh.Client, error) {
-	host := c.cfg.Host
-	if hostOverride != "" {
-		host = hostOverride
-	}
-	if host == "" {
+// dial establishes an SSH client to the configured host, honoring ctx. The
+// caller must Close the returned client.
+func (c *Client) dial(ctx context.Context) (*ssh.Client, error) {
+	if c.cfg.Host == "" {
 		return nil, fmt.Errorf("sshexec: no host configured")
 	}
-	addr := withPort(host, "22")
+	addr := withPort(c.cfg.Host, "22")
 
 	methods, err := c.authMethods()
 	if err != nil {
@@ -146,25 +142,21 @@ func (c *Client) dial(ctx context.Context, hostOverride string) (*ssh.Client, er
 	return ssh.NewClient(sshConn, chans, reqs), nil
 }
 
-// DialTCP opens a raw TCP connection to hostOverride (or the configured host if
-// empty), defaulting the port to 22. No SSH handshake is performed: it is used
-// to tunnel a client's own SSH session to the target through the daemon.
-func (c *Client) DialTCP(ctx context.Context, hostOverride string) (net.Conn, error) {
-	host := c.cfg.Host
-	if hostOverride != "" {
-		host = hostOverride
-	}
-	if host == "" {
+// DialTCP opens a raw TCP connection to the configured host, defaulting the
+// port to 22. No SSH handshake is performed: it is used to tunnel a client's
+// own SSH session to the target through the daemon.
+func (c *Client) DialTCP(ctx context.Context) (net.Conn, error) {
+	if c.cfg.Host == "" {
 		return nil, fmt.Errorf("sshexec: no host configured")
 	}
 	d := net.Dialer{Timeout: c.dialTimeout()}
-	return d.DialContext(ctx, "tcp", withPort(host, "22"))
+	return d.DialContext(ctx, "tcp", withPort(c.cfg.Host, "22"))
 }
 
-// Exec runs command on host (or hostOverride if non-empty) and returns its
-// output and exit status. A non-zero exit code is returned in Result, not as an
-// error; err is reserved for connection/transport failures.
-func (c *Client) Exec(ctx context.Context, hostOverride, command string, timeout time.Duration) (Result, error) {
+// Exec runs command on the configured host and returns its output and exit
+// status. A non-zero exit code is returned in Result, not as an error; err is
+// reserved for connection/transport failures.
+func (c *Client) Exec(ctx context.Context, command string, timeout time.Duration) (Result, error) {
 	// Apply an overall context deadline covering dial + run.
 	if timeout > 0 {
 		var cancel context.CancelFunc
@@ -172,7 +164,7 @@ func (c *Client) Exec(ctx context.Context, hostOverride, command string, timeout
 		defer cancel()
 	}
 
-	client, err := c.dial(ctx, hostOverride)
+	client, err := c.dial(ctx)
 	if err != nil {
 		return Result{}, err
 	}

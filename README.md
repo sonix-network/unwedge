@@ -224,9 +224,9 @@ The built-in `unwedge scp` (above) is the credential-free alternative: it copies
 over the daemon's own SSH connection using the classic scp protocol (remote `scp
 -t`/`scp -f`), so it needs no local keys and no SFTP subsystem on the target.
 
-`unwedge ssh` and `unwedge scp` accept `--host host[:port]` to target a
-different host on the target's network, and `-W` accepts an optional `host:port`
-(e.g. OpenSSH's `%h:%p`) for the same purpose.
+`unwedge ssh`/`unwedge scp` always connect to the daemon's server-configured SSH
+target; the client cannot redirect them to another host. Any `host:port` passed
+to `-W` (e.g. OpenSSH's `%h:%p`) is ignored for the same reason.
 
 ## Session locking (multiple agents, one unit)
 

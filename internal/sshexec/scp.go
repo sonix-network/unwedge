@@ -25,7 +25,7 @@ type SCPMeta struct {
 // classic scp protocol (remote `scp -t`), so no SFTP subsystem is required.
 // mode is the unix permission bits to request (0 -> 0644). remotePath may be a
 // file path or an existing directory to drop the file into.
-func (c *Client) SCPUpload(ctx context.Context, hostOverride, remotePath string, mode os.FileMode, size int64, src io.Reader, timeout time.Duration) error {
+func (c *Client) SCPUpload(ctx context.Context, remotePath string, mode os.FileMode, size int64, src io.Reader, timeout time.Duration) error {
 	if size < 0 {
 		return fmt.Errorf("sshexec: negative size")
 	}
@@ -34,7 +34,7 @@ func (c *Client) SCPUpload(ctx context.Context, hostOverride, remotePath string,
 	}
 	name := baseName(remotePath)
 
-	return c.scpSession(ctx, hostOverride, "scp -t -- "+shellQuote(remotePath), timeout,
+	return c.scpSession(ctx, "scp -t -- "+shellQuote(remotePath), timeout,
 		func(w io.Writer, r *bufio.Reader) error {
 			// The sink (remote scp -t) sends an initial ack when ready.
 			if err := scpReadAck(r); err != nil {
@@ -61,8 +61,8 @@ func (c *Client) SCPUpload(ctx context.Context, hostOverride, remotePath string,
 // SCPDownload copies remotePath from the target using the classic scp protocol
 // (remote `scp -f`) and hands the metadata and a reader positioned at the file
 // body to sink. sink must consume exactly meta.Size bytes.
-func (c *Client) SCPDownload(ctx context.Context, hostOverride, remotePath string, timeout time.Duration, sink func(meta SCPMeta, body io.Reader) error) error {
-	return c.scpSession(ctx, hostOverride, "scp -f -- "+shellQuote(remotePath), timeout,
+func (c *Client) SCPDownload(ctx context.Context, remotePath string, timeout time.Duration, sink func(meta SCPMeta, body io.Reader) error) error {
+	return c.scpSession(ctx, "scp -f -- "+shellQuote(remotePath), timeout,
 		func(w io.Writer, r *bufio.Reader) error {
 			// Tell the source we are ready to receive.
 			if _, err := w.Write([]byte{0}); err != nil {
@@ -117,13 +117,13 @@ func (c *Client) SCPDownload(ctx context.Context, hostOverride, remotePath strin
 // scpSession opens an SSH session running command (a remote `scp -t/-f`) and
 // drives the scp protocol via run, wiring run's writer to the remote stdin and
 // its reader to the remote stdout. Remote stderr is captured for diagnostics.
-func (c *Client) scpSession(ctx context.Context, hostOverride, command string, timeout time.Duration, run func(w io.Writer, r *bufio.Reader) error) error {
+func (c *Client) scpSession(ctx context.Context, command string, timeout time.Duration, run func(w io.Writer, r *bufio.Reader) error) error {
 	if timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	client, err := c.dial(ctx, hostOverride)
+	client, err := c.dial(ctx)
 	if err != nil {
 		return err
 	}

@@ -355,8 +355,10 @@ message DeleteImageResponse {}
 message SSHExecRequest {
   string command = 1;
   int64 timeout_ms = 2;
-  // Optional override of the configured target host (host or host:port).
-  string host_override = 3;
+  // Field 3 was host_override: removed so a client cannot direct the daemon to
+  // dial an arbitrary host. The daemon always uses its configured SSH target.
+  reserved 3;
+  reserved "host_override";
 }
 
 message SSHExecResponse {
@@ -366,12 +368,13 @@ message SSHExecResponse {
   bool timed_out = 4;
 }
 
-// TunnelChunk carries raw bytes for a Tunnel stream. The first client message
-// may set host_override to pick the dial target (host or host:port on the
-// target's network); empty means the configured SSH host on port 22. It is
-// read only from the first message; data flows in both directions thereafter.
+// TunnelChunk carries raw bytes for a Tunnel stream. The dial target is always
+// the daemon's configured SSH host on port 22; data flows in both directions.
 message TunnelChunk {
-  string host_override = 1;
+  // Field 1 was host_override: removed so a client cannot direct the daemon to
+  // dial an arbitrary host.
+  reserved 1;
+  reserved "host_override";
   bytes data = 2;
 }
 
@@ -384,7 +387,10 @@ message SCPUploadRequest {
     int64 size = 2;          // exact number of file bytes that follow
     uint32 mode = 3;         // unix permission bits; 0 -> 0644
     int64 timeout_ms = 4;
-    string host_override = 5;
+    // Field 5 was host_override: removed so a client cannot direct the daemon
+    // to dial an arbitrary host.
+    reserved 5;
+    reserved "host_override";
   }
   oneof payload {
     Metadata metadata = 1;   // must be the first message
@@ -399,7 +405,10 @@ message SCPUploadResponse {
 message SCPDownloadRequest {
   string remote_path = 1;    // source path on the target
   int64 timeout_ms = 2;
-  string host_override = 3;
+  // Field 3 was host_override: removed so a client cannot direct the daemon to
+  // dial an arbitrary host.
+  reserved 3;
+  reserved "host_override";
 }
 
 message SCPDownloadResponse {

@@ -1889,11 +1889,9 @@ func (*DeleteImageResponse) Descriptor() ([]byte, []int) {
 }
 
 type SSHExecRequest struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	Command   string                 `protobuf:"bytes,1,opt,name=command,proto3" json:"command,omitempty"`
-	TimeoutMs int64                  `protobuf:"varint,2,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
-	// Optional override of the configured target host (host or host:port).
-	HostOverride  string `protobuf:"bytes,3,opt,name=host_override,json=hostOverride,proto3" json:"host_override,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Command       string                 `protobuf:"bytes,1,opt,name=command,proto3" json:"command,omitempty"`
+	TimeoutMs     int64                  `protobuf:"varint,2,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1940,13 +1938,6 @@ func (x *SSHExecRequest) GetTimeoutMs() int64 {
 		return x.TimeoutMs
 	}
 	return 0
-}
-
-func (x *SSHExecRequest) GetHostOverride() string {
-	if x != nil {
-		return x.HostOverride
-	}
-	return ""
 }
 
 type SSHExecResponse struct {
@@ -2017,13 +2008,10 @@ func (x *SSHExecResponse) GetTimedOut() bool {
 	return false
 }
 
-// TunnelChunk carries raw bytes for a Tunnel stream. The first client message
-// may set host_override to pick the dial target (host or host:port on the
-// target's network); empty means the configured SSH host on port 22. It is
-// read only from the first message; data flows in both directions thereafter.
+// TunnelChunk carries raw bytes for a Tunnel stream. The dial target is always
+// the daemon's configured SSH host on port 22; data flows in both directions.
 type TunnelChunk struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	HostOverride  string                 `protobuf:"bytes,1,opt,name=host_override,json=hostOverride,proto3" json:"host_override,omitempty"`
 	Data          []byte                 `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2057,13 +2045,6 @@ func (x *TunnelChunk) ProtoReflect() protoreflect.Message {
 // Deprecated: Use TunnelChunk.ProtoReflect.Descriptor instead.
 func (*TunnelChunk) Descriptor() ([]byte, []int) {
 	return file_unwedge_v1_unwedge_proto_rawDescGZIP(), []int{32}
-}
-
-func (x *TunnelChunk) GetHostOverride() string {
-	if x != nil {
-		return x.HostOverride
-	}
-	return ""
 }
 
 func (x *TunnelChunk) GetData() []byte {
@@ -2203,7 +2184,6 @@ type SCPDownloadRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RemotePath    string                 `protobuf:"bytes,1,opt,name=remote_path,json=remotePath,proto3" json:"remote_path,omitempty"` // source path on the target
 	TimeoutMs     int64                  `protobuf:"varint,2,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
-	HostOverride  string                 `protobuf:"bytes,3,opt,name=host_override,json=hostOverride,proto3" json:"host_override,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2250,13 +2230,6 @@ func (x *SCPDownloadRequest) GetTimeoutMs() int64 {
 		return x.TimeoutMs
 	}
 	return 0
-}
-
-func (x *SCPDownloadRequest) GetHostOverride() string {
-	if x != nil {
-		return x.HostOverride
-	}
-	return ""
 }
 
 type SCPDownloadResponse struct {
@@ -2408,7 +2381,6 @@ type SCPUploadRequest_Metadata struct {
 	Size          int64  `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"` // exact number of file bytes that follow
 	Mode          uint32 `protobuf:"varint,3,opt,name=mode,proto3" json:"mode,omitempty"` // unix permission bits; 0 -> 0644
 	TimeoutMs     int64  `protobuf:"varint,4,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
-	HostOverride  string `protobuf:"bytes,5,opt,name=host_override,json=hostOverride,proto3" json:"host_override,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2469,13 +2441,6 @@ func (x *SCPUploadRequest_Metadata) GetTimeoutMs() int64 {
 		return x.TimeoutMs
 	}
 	return 0
-}
-
-func (x *SCPUploadRequest_Metadata) GetHostOverride() string {
-	if x != nil {
-		return x.HostOverride
-	}
-	return ""
 }
 
 type SCPDownloadResponse_Metadata struct {
@@ -2672,40 +2637,36 @@ const file_unwedge_v1_unwedge_proto_rawDesc = "" +
 	"\x06images\x18\x01 \x03(\v2\x15.unwedge.v1.ImageInfoR\x06images\"(\n" +
 	"\x12DeleteImageRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"\x15\n" +
-	"\x13DeleteImageResponse\"n\n" +
+	"\x13DeleteImageResponse\"^\n" +
 	"\x0eSSHExecRequest\x12\x18\n" +
 	"\acommand\x18\x01 \x01(\tR\acommand\x12\x1d\n" +
 	"\n" +
-	"timeout_ms\x18\x02 \x01(\x03R\ttimeoutMs\x12#\n" +
-	"\rhost_override\x18\x03 \x01(\tR\fhostOverride\"{\n" +
+	"timeout_ms\x18\x02 \x01(\x03R\ttimeoutMsJ\x04\b\x03\x10\x04R\rhost_override\"{\n" +
 	"\x0fSSHExecResponse\x12\x1b\n" +
 	"\texit_code\x18\x01 \x01(\x05R\bexitCode\x12\x16\n" +
 	"\x06stdout\x18\x02 \x01(\fR\x06stdout\x12\x16\n" +
 	"\x06stderr\x18\x03 \x01(\fR\x06stderr\x12\x1b\n" +
-	"\ttimed_out\x18\x04 \x01(\bR\btimedOut\"F\n" +
-	"\vTunnelChunk\x12#\n" +
-	"\rhost_override\x18\x01 \x01(\tR\fhostOverride\x12\x12\n" +
-	"\x04data\x18\x02 \x01(\fR\x04data\"\x94\x02\n" +
+	"\ttimed_out\x18\x04 \x01(\bR\btimedOut\"6\n" +
+	"\vTunnelChunk\x12\x12\n" +
+	"\x04data\x18\x02 \x01(\fR\x04dataJ\x04\b\x01\x10\x02R\rhost_override\"\x84\x02\n" +
 	"\x10SCPUploadRequest\x12C\n" +
 	"\bmetadata\x18\x01 \x01(\v2%.unwedge.v1.SCPUploadRequest.MetadataH\x00R\bmetadata\x12\x16\n" +
-	"\x05chunk\x18\x02 \x01(\fH\x00R\x05chunk\x1a\x97\x01\n" +
+	"\x05chunk\x18\x02 \x01(\fH\x00R\x05chunk\x1a\x87\x01\n" +
 	"\bMetadata\x12\x1f\n" +
 	"\vremote_path\x18\x01 \x01(\tR\n" +
 	"remotePath\x12\x12\n" +
 	"\x04size\x18\x02 \x01(\x03R\x04size\x12\x12\n" +
 	"\x04mode\x18\x03 \x01(\rR\x04mode\x12\x1d\n" +
 	"\n" +
-	"timeout_ms\x18\x04 \x01(\x03R\ttimeoutMs\x12#\n" +
-	"\rhost_override\x18\x05 \x01(\tR\fhostOverrideB\t\n" +
+	"timeout_ms\x18\x04 \x01(\x03R\ttimeoutMsJ\x04\b\x05\x10\x06R\rhost_overrideB\t\n" +
 	"\apayload\"8\n" +
 	"\x11SCPUploadResponse\x12#\n" +
-	"\rbytes_written\x18\x01 \x01(\x03R\fbytesWritten\"y\n" +
+	"\rbytes_written\x18\x01 \x01(\x03R\fbytesWritten\"i\n" +
 	"\x12SCPDownloadRequest\x12\x1f\n" +
 	"\vremote_path\x18\x01 \x01(\tR\n" +
 	"remotePath\x12\x1d\n" +
 	"\n" +
-	"timeout_ms\x18\x02 \x01(\x03R\ttimeoutMs\x12#\n" +
-	"\rhost_override\x18\x03 \x01(\tR\fhostOverride\"\xc8\x01\n" +
+	"timeout_ms\x18\x02 \x01(\x03R\ttimeoutMsJ\x04\b\x03\x10\x04R\rhost_override\"\xc8\x01\n" +
 	"\x13SCPDownloadResponse\x12F\n" +
 	"\bmetadata\x18\x01 \x01(\v2(.unwedge.v1.SCPDownloadResponse.MetadataH\x00R\bmetadata\x12\x16\n" +
 	"\x05chunk\x18\x02 \x01(\fH\x00R\x05chunk\x1aF\n" +
