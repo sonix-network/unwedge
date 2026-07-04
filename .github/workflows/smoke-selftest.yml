@@ -40,25 +40,34 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # TEMPORARY diagnostic: does the worker have global IPv6 + a route to the
-      # controller, and what does its resolver return for the (AAAA-only)
-      # controller host? Explains the no_proxy "produced zero addresses"
-      # failure. Remove once understood.
-      - name: Diag - worker IPv6 and DNS (temporary)
+      # TEMPORARY diagnostic: query the controller name with dig on the worker,
+      # comparing the system resolver against public resolvers, to see why it
+      # resolves to zero addresses locally. The hostname is masked in output.
+      # Remove once understood.
+      - name: Diag - dig on the worker (temporary)
         if: always()
         env:
           UNWEDGE_ADDR: ${{ secrets.UNWEDGE_ADDR }}
         run: |
           set +e
-          echo "== global IPv6 addresses =="; ip -6 addr show scope global
-          echo "== IPv6 default route =="; ip -6 route show default
-          echo "== route to controller (2a0a:d980:1981:108::1) =="; ip -6 route get 2a0a:d980:1981:108::1
-          echo "== reach controller over IPv6 =="; (ping -6 -c1 -W2 2a0a:d980:1981:108::1 || ping6 -c1 -W2 2a0a:d980:1981:108::1) 2>&1 | tail -3
-          echo "== proxy env (names only) =="; env | grep -iE 'proxy' | sed -E 's/=.*/=<set>/'
-          host="${UNWEDGE_ADDR%:*}"   # controller host, without :port (not printed)
-          echo "== worker resolver output for the controller host (addresses only) =="
-          echo "  ahosts   (default family): $(getent ahosts   "$host" | awk '{print $1}' | sort -u | paste -sd, -)"
-          echo "  ahostsv6 (force v6):       $(getent ahostsv6 "$host" | awk '{print $1}' | sort -u | paste -sd, -)"
+          host="${UNWEDGE_ADDR%:*}"                 # controller host, without :port
+          esc="${host//./\\.}"
+          mask() { sed -E "s/${esc}/<controller-host>/g"; }
+          if ! command -v dig >/dev/null 2>&1; then
+            echo "dig not installed; attempting install (dnsutils/bind-utils)..."
+            { sudo apt-get -qq update && sudo apt-get -qq install -y dnsutils; } >/dev/null 2>&1 \
+              || sudo dnf -q -y install bind-utils >/dev/null 2>&1 \
+              || sudo yum -q -y install bind-utils >/dev/null 2>&1
+          fi
+          echo "== /etc/resolv.conf (nameservers the worker uses) =="; cat /etc/resolv.conf 2>/dev/null | grep -vE '^\s*#'
+          if command -v dig >/dev/null 2>&1; then
+            echo "== dig AAAA via system resolver (status + SERVER) =="; dig AAAA "$host" | mask
+            echo "== dig A via system resolver (short) =="; dig +short A "$host" | mask
+            echo "== dig AAAA @2606:4700:4700::1111 (Cloudflare over IPv6) =="; dig +short AAAA "$host" @2606:4700:4700::1111 | mask
+            echo "== dig AAAA @2001:4860:4860::8888 (Google over IPv6) =="; dig +short AAAA "$host" @2001:4860:4860::8888 | mask
+          else
+            echo "dig unavailable; nslookup fallback:"; nslookup -query=AAAA "$host" 2>&1 | mask
+          fi
 
       - name: Download known-good vEdge 1000 image
         env:
