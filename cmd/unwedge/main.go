@@ -414,6 +414,14 @@ func cmdSSH(ctx context.Context, cl *client.Client, args []string, o cmdOpts) er
 	// host:port args (e.g. OpenSSH's %h:%p) are ignored: the daemon always dials
 	// its server-configured SSH target.
 	if o.proxy {
+		// When the local ssh exits (e.g. right after "Host key verification
+		// failed") it closes its end of the ProxyCommand socket. The tunnel's
+		// next write to os.Stdout then fails with EPIPE, and Go raises SIGPIPE on
+		// writes to fd 1/2 — whose default action kills the process before our
+		// deferred lock release runs, leaking the hardware lock until the daemon's
+		// idle TTL. Ignore SIGPIPE so the broken pipe surfaces as a normal write
+		// error, the tunnel unwinds, and FinishSession is sent on the way out.
+		signal.Ignore(syscall.SIGPIPE)
 		return cl.Tunnel(ctx, os.Stdin, os.Stdout)
 	}
 	if len(args) == 0 {
