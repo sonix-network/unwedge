@@ -32,7 +32,10 @@ env:
 
 jobs:
   smoke:
-    runs-on: ubuntu-latest
+    # Self-hosted: the controller (unwedged) is reachable over IPv6 only, and
+    # GitHub-hosted runners are IPv4-only. The org's self-hosted runner shares
+    # the controller's network, matching how the openwrt build runs.
+    runs-on: self-hosted
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -45,15 +48,19 @@ jobs:
           set -euo pipefail
           echo "Using known-good OpenWrt release: ${OPENWRT_TAG}"
           mkdir -p image
-          # Public repo: the default token can read releases. If openwrt becomes
-          # private, swap GH_TOKEN for a PAT with read access.
-          gh release download "${OPENWRT_TAG}" \
-            -R "${OPENWRT_REPO}" \
-            -p '*-cisco_vedge1000-initramfs-kernel.bin' \
-            -D image
+          # Resolve the vEdge 1000 initramfs asset URL from the release API with
+          # curl (the self-hosted runner isn't guaranteed to have the gh CLI).
+          # The token just raises rate limits; openwrt is public. If it becomes
+          # private, use a PAT with read access and fetch the asset API URL with
+          # 'Accept: application/octet-stream' instead of browser_download_url.
+          api="https://api.github.com/repos/${OPENWRT_REPO}/releases/tags/${OPENWRT_TAG}"
+          url=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" \
+                     -H "Accept: application/vnd.github+json" "$api" \
+                | grep -oE 'https://[^"]*cisco_vedge1000-initramfs-kernel\.bin' | head -n1)
+          [ -n "$url" ] || { echo "::error::no vedge1000 initramfs asset in ${OPENWRT_TAG}"; exit 1; }
+          echo "Downloading: $url"
+          curl -fsSL -o "image/$(basename "$url")" "$url"
           ls -l image
-          count=$(ls image/*-cisco_vedge1000-initramfs-kernel.bin 2>/dev/null | wc -l)
-          [ "$count" -eq 1 ] || { echo "::error::expected exactly 1 vedge1000 image, got $count"; exit 1; }
 
       - name: Smoke test on real vEdge 1000
         id: smoke
