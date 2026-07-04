@@ -7,6 +7,7 @@ It turns a controller box — itself a vEdge 1000 running OpenWrt — into a ser
 that owns everything you need to iterate on the device-under-test (DUT):
 
 - **Serial console** over an FTDI USB-UART (115200 8N1): stream, scrollback, write, regex-wait.
+  Scrollback is cleared on every power cycle, so the log always starts at the current boot.
 - **Power** via an APC switched rack PDU over SNMP (the DUT is on outlet 3): on/off/cycle.
 - **U-Boot orchestration**: interrupt the autoboot (`Ctrl-X`), run commands, and the full
   **netboot** recipe (`dhcp` → `tftpboot` → `bootoctlinux … coremask=f`).

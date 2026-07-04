@@ -47,6 +47,16 @@ func (r *ring) write(p []byte) {
 	}
 }
 
+// reset discards all buffered bytes, returning the ring to its initial empty
+// state. The truncation and total-bytes counters are cleared too, so after a
+// reset a snapshot reads as a fresh, untruncated log.
+func (r *ring) reset() {
+	r.size = 0
+	r.start = 0
+	r.totalIn = 0
+	r.truncated = false
+}
+
 // snapshot returns a copy of the buffered bytes in order. If maxBytes > 0 and
 // smaller than the buffered size, only the most recent maxBytes are returned.
 // The second return value reports whether any data (from the ring as a whole)

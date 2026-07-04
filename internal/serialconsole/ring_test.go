@@ -55,3 +55,22 @@ func TestRingTotalIn(t *testing.T) {
 		t.Fatalf("totalIn=%d", r.totalIn)
 	}
 }
+
+func TestRingReset(t *testing.T) {
+	r := newRing(4)
+	r.write([]byte("abcdef")) // overflows cap -> truncated
+	r.reset()
+	got, trunc := r.snapshot(0)
+	if len(got) != 0 || trunc {
+		t.Fatalf("after reset got %q trunc=%v, want empty untruncated", got, trunc)
+	}
+	if r.totalIn != 0 {
+		t.Fatalf("after reset totalIn=%d, want 0", r.totalIn)
+	}
+	// The ring is still usable and untruncated after a reset.
+	r.write([]byte("xy"))
+	got, trunc = r.snapshot(0)
+	if string(got) != "xy" || trunc {
+		t.Fatalf("post-reset write got %q trunc=%v", got, trunc)
+	}
+}
