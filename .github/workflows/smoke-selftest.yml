@@ -1,0 +1,88 @@
+name: Smoke self-test
+
+# Exercise THIS repo's composite action (action.yml) end-to-end against a
+# known-good OpenWrt image on the real vEdge 1000, so we know the action works
+# before wiring it into the sonix-network/openwrt weekly build.
+#
+# Run it on demand (Actions -> Smoke self-test -> Run workflow, or `gh workflow
+# run`). It downloads a pinned, known-good initramfs image from a
+# sonix-network/openwrt release, boots it on the hardware through the action
+# exactly as the openwrt repo would, and asserts the action reported PASS and
+# produced a healthy boot log artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      openwrt-tag:
+        description: sonix-network/openwrt release tag to boot (known-good image)
+        required: false
+        default: v2026-07-04.233
+
+permissions:
+  contents: read
+
+# The smoke test drives a single physical DUT. unwedged also holds an exclusive
+# hardware lock, but serialize here too so runs don't pile up waiting on it.
+concurrency:
+  group: vedge1000-hardware
+  cancel-in-progress: false
+
+env:
+  OPENWRT_REPO: sonix-network/openwrt
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download known-good vEdge 1000 image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPENWRT_TAG: ${{ inputs.openwrt-tag }}
+        run: |
+          set -euo pipefail
+          echo "Using known-good OpenWrt release: ${OPENWRT_TAG}"
+          mkdir -p image
+          # Public repo: the default token can read releases. If openwrt becomes
+          # private, swap GH_TOKEN for a PAT with read access.
+          gh release download "${OPENWRT_TAG}" \
+            -R "${OPENWRT_REPO}" \
+            -p '*-cisco_vedge1000-initramfs-kernel.bin' \
+            -D image
+          ls -l image
+          count=$(ls image/*-cisco_vedge1000-initramfs-kernel.bin 2>/dev/null | wc -l)
+          [ "$count" -eq 1 ] || { echo "::error::expected exactly 1 vedge1000 image, got $count"; exit 1; }
+
+      - name: Smoke test on real vEdge 1000
+        id: smoke
+        uses: ./
+        with:
+          image: image/*-cisco_vedge1000-initramfs-kernel.bin
+          boot-log: vedge1000-boot.log
+          addr: ${{ secrets.UNWEDGE_ADDR }}
+          ca: ${{ secrets.UNWEDGE_CA }}
+          cert: ${{ secrets.UNWEDGE_CLIENT_CERT }}
+          key: ${{ secrets.UNWEDGE_CLIENT_KEY }}
+
+      # Prove the action produced good artifacts, not just a zero exit: the
+      # result output is PASS, and the boot log exists and shows a healthy boot.
+      - name: Verify the action's artifacts
+        if: always()
+        run: |
+          set -uo pipefail
+          log="${{ steps.smoke.outputs.boot-log }}"
+          result="${{ steps.smoke.outputs.result }}"
+          echo "action result: ${result:-<none>}"
+          fail=0
+          [ "$result" = "PASS" ] || { echo "::error::smoke result was '${result:-<none>}', expected PASS"; fail=1; }
+          [ -s "$log" ] || { echo "::error::boot log '${log:-<unset>}' missing or empty"; fail=1; }
+          if [ -s "$log" ]; then
+            if grep -Eq 'Please press Enter to activate this console|BusyBox v[0-9]|procd: - init -' "$log"; then
+              echo "boot log OK ($(wc -c < "$log") bytes, healthy-userspace marker present)"
+            else
+              echo "::error::boot log lacks a healthy-userspace marker"; fail=1
+            fi
+          fi
+          exit $fail
