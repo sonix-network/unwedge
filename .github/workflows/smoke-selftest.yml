@@ -38,7 +38,13 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 20
     steps:
+      # Check the action out into a subdir so the job's working directory (the
+      # repo root) is NOT the action's module root. This mirrors how external
+      # consumers (the openwrt build) invoke `uses: sonix-network/unwedge@...`,
+      # where cwd has no go.mod — so the self-test exercises the real thing.
       - uses: actions/checkout@v7
+        with:
+          path: action
 
       - name: Download known-good vEdge 1000 image
         env:
@@ -69,7 +75,7 @@ jobs:
       # its (already-TLS) gRPC to unwedged.
       - name: Smoke test on real vEdge 1000
         id: smoke
-        uses: ./
+        uses: ./action
         with:
           image: image/*-cisco_vedge1000-initramfs-kernel.bin
           boot-log: vedge1000-boot.log
