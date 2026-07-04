@@ -240,8 +240,15 @@ type GetStatusResponse struct {
 	SessionOwner           string `protobuf:"bytes,10,opt,name=session_owner,json=sessionOwner,proto3" json:"session_owner,omitempty"`    // owner label supplied at StartSession
 	SessionStartedAtUnixMs int64  `protobuf:"varint,11,opt,name=session_started_at_unix_ms,json=sessionStartedAtUnixMs,proto3" json:"session_started_at_unix_ms,omitempty"`
 	SessionExpiresAtUnixMs int64  `protobuf:"varint,12,opt,name=session_expires_at_unix_ms,json=sessionExpiresAtUnixMs,proto3" json:"session_expires_at_unix_ms,omitempty"` // when the lock expires if not refreshed
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	// Target SSH configuration, so it's clear where 'ssh' commands land. Empty
+	// when SSH is not configured.
+	SshTarget string `protobuf:"bytes,13,opt,name=ssh_target,json=sshTarget,proto3" json:"ssh_target,omitempty"` // host or host:port unwedge SSHes to
+	SshUser   string `protobuf:"bytes,14,opt,name=ssh_user,json=sshUser,proto3" json:"ssh_user,omitempty"`       // username unwedge authenticates as
+	// 1-based APC PDU outlet the target's power is wired to, or 0 if power
+	// control is not configured.
+	PowerOutlet   int32 `protobuf:"varint,15,opt,name=power_outlet,json=powerOutlet,proto3" json:"power_outlet,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetStatusResponse) Reset() {
@@ -354,6 +361,27 @@ func (x *GetStatusResponse) GetSessionStartedAtUnixMs() int64 {
 func (x *GetStatusResponse) GetSessionExpiresAtUnixMs() int64 {
 	if x != nil {
 		return x.SessionExpiresAtUnixMs
+	}
+	return 0
+}
+
+func (x *GetStatusResponse) GetSshTarget() string {
+	if x != nil {
+		return x.SshTarget
+	}
+	return ""
+}
+
+func (x *GetStatusResponse) GetSshUser() string {
+	if x != nil {
+		return x.SshUser
+	}
+	return ""
+}
+
+func (x *GetStatusResponse) GetPowerOutlet() int32 {
+	if x != nil {
+		return x.PowerOutlet
 	}
 	return 0
 }
@@ -2516,7 +2544,7 @@ const file_unwedge_v1_unwedge_proto_rawDesc = "" +
 	"\n" +
 	"\x18unwedge/v1/unwedge.proto\x12\n" +
 	"unwedge.v1\"\x12\n" +
-	"\x10GetStatusRequest\"\x8b\x04\n" +
+	"\x10GetStatusRequest\"\xe8\x04\n" +
 	"\x11GetStatusResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12)\n" +
 	"\x10serial_connected\x18\x02 \x01(\bR\x0fserialConnected\x12#\n" +
@@ -2532,7 +2560,11 @@ const file_unwedge_v1_unwedge_proto_rawDesc = "" +
 	"\rsession_owner\x18\n" +
 	" \x01(\tR\fsessionOwner\x12:\n" +
 	"\x1asession_started_at_unix_ms\x18\v \x01(\x03R\x16sessionStartedAtUnixMs\x12:\n" +
-	"\x1asession_expires_at_unix_ms\x18\f \x01(\x03R\x16sessionExpiresAtUnixMs\"S\n" +
+	"\x1asession_expires_at_unix_ms\x18\f \x01(\x03R\x16sessionExpiresAtUnixMs\x12\x1d\n" +
+	"\n" +
+	"ssh_target\x18\r \x01(\tR\tsshTarget\x12\x19\n" +
+	"\bssh_user\x18\x0e \x01(\tR\asshUser\x12!\n" +
+	"\fpower_outlet\x18\x0f \x01(\x05R\vpowerOutlet\"S\n" +
 	"\x13StartSessionRequest\x12\x14\n" +
 	"\x05owner\x18\x01 \x01(\tR\x05owner\x12&\n" +
 	"\x0fwait_timeout_ms\x18\x02 \x01(\x03R\rwaitTimeoutMs\"y\n" +

@@ -141,6 +141,14 @@ message GetStatusResponse {
   string session_owner = 10;            // owner label supplied at StartSession
   int64 session_started_at_unix_ms = 11;
   int64 session_expires_at_unix_ms = 12; // when the lock expires if not refreshed
+
+  // Target SSH configuration, so it's clear where 'ssh' commands land. Empty
+  // when SSH is not configured.
+  string ssh_target = 13; // host or host:port unwedge SSHes to
+  string ssh_user = 14;   // username unwedge authenticates as
+  // 1-based APC PDU outlet the target's power is wired to, or 0 if power
+  // control is not configured.
+  int32 power_outlet = 15;
 }
 
 // ---- Session locking -------------------------------------------------------
