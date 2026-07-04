@@ -60,6 +60,11 @@ In the openwrt weekly workflow, after the image build job, add a job:
           ca:     ${{ secrets.UNWEDGE_CA }}
           cert:   ${{ secrets.UNWEDGE_CLIENT_CERT }}
           key:    ${{ secrets.UNWEDGE_CLIENT_KEY }}
+          # Optional: after a healthy boot, SSH in to confirm connectivity and
+          # that the expected image booted. ssh-expect is an RE2 pattern the
+          # command's stdout must match, so a wrong/old image fails the test.
+          ssh-command: cat /etc/openwrt_release
+          ssh-expect:  SONIX-
 
       # The action already uploads the boot log as an artifact; to also attach it
       # to the GitHub release:
@@ -110,9 +115,12 @@ walkthrough.
 
 ## Notes / current limitations
 
-- The DUT's MAC is not statically settable in hardware, so its DHCP lease/IP may
-  vary. The netboot flow uses U-Boot `dhcp` and does not assume a fixed DUT IP.
-  A future option-82 static lease per physical port will stabilize SSH access;
-  until then prefer console/netboot assertions over SSH in CI.
+- The netboot flow uses U-Boot `dhcp` and does not assume a fixed DUT IP. The
+  optional post-boot SSH check (`ssh-command` / `ssh-expect`) goes through the
+  daemon's configured `ssh.host`, so that target must resolve to the booted DUT
+  (e.g. a stable per-device management lease). It retries for `ssh-timeout`
+  (default 90s) to let dropbear and DHCP come up, and its output is appended to
+  the boot log. Leave `ssh-command` empty to skip the SSH check entirely and
+  rely on console/netboot assertions only.
 - Smoke testing uses the **initramfs** image (boots to RAM); it does not touch
   the on-disk installation, so it is safe to run against a persistent DUT.

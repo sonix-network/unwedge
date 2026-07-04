@@ -54,6 +54,18 @@ inputs:
     description: Extra kernel command-line arguments
     required: false
     default: ""
+  ssh-command:
+    description: If set, run this over SSH after a healthy boot to verify connectivity (e.g. "cat /etc/openwrt_release")
+    required: false
+    default: ""
+  ssh-expect:
+    description: Regex the ssh-command stdout must match (asserts the expected image booted)
+    required: false
+    default: ""
+  ssh-timeout:
+    description: How long to retry SSH after a healthy boot (Go duration, e.g. 90s)
+    required: false
+    default: "90s"
   verify-crc32:
     description: Verify the image CRC32 in U-Boot before booting
     required: false
@@ -137,6 +149,9 @@ runs:
           -timeout "${{ inputs.boot-timeout }}" \
           -verify="${{ inputs.verify-crc32 }}" \
           -kernel-args "${{ inputs.kernel-args }}" \
+          -ssh-command "${{ inputs.ssh-command }}" \
+          -ssh-expect "${{ inputs.ssh-expect }}" \
+          -ssh-timeout "${{ inputs.ssh-timeout }}" \
           -out "${{ inputs.boot-log }}" \
           smoke "${{ steps.img.outputs.path }}"
         rc=$?
