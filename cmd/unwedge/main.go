@@ -221,7 +221,17 @@ func cmdStatus(ctx context.Context, cl *client.Client) error {
 	}
 	fmt.Printf("version:        %s\n", s.Version)
 	fmt.Printf("serial:         %s @ %d (connected=%v)\n", s.SerialDevice, s.SerialBaud, s.SerialConnected)
-	fmt.Printf("power state:    %s\n", strings.TrimPrefix(s.PowerState.String(), "POWER_STATE_"))
+	powerState := strings.TrimPrefix(s.PowerState.String(), "POWER_STATE_")
+	if s.PowerOutlet > 0 {
+		fmt.Printf("power state:    %s (outlet %d)\n", powerState, s.PowerOutlet)
+	} else {
+		fmt.Printf("power state:    %s\n", powerState)
+	}
+	if s.SshTarget != "" {
+		fmt.Printf("ssh target:     %s@%s\n", s.SshUser, s.SshTarget)
+	} else {
+		fmt.Printf("ssh target:     (not configured)\n")
+	}
 	fmt.Printf("tftp:           %s (dir %s)\n", s.TftpAddress, s.TftpDir)
 	fmt.Printf("console buffer: %d bytes\n", s.ConsoleBufferBytes)
 	if s.SessionActive {

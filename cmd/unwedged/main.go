@@ -76,7 +76,9 @@ func run() error {
 
 	// Power control (optional).
 	var pwr power.Controller
+	var powerOutlet int32 // 0 = power control unconfigured; surfaced by GetStatus
 	if cfg.Power.Address != "" {
+		powerOutlet = int32(cfg.Power.Outlet)
 		apc, err := power.NewAPC(power.APCConfig{
 			Address:        cfg.Power.Address,
 			Community:      cfg.Power.Community,
@@ -178,6 +180,9 @@ func run() error {
 		SerialDevice: cfg.Serial.Device,
 		SerialBaud:   uint32(cfg.Serial.Baud),
 		TFTPAddress:  cfg.TFTP.Address,
+		SSHTarget:    cfg.SSH.Host,
+		SSHUser:      cfg.SSH.User,
+		PowerOutlet:  powerOutlet,
 	})
 
 	// gRPC server with optional TLS.

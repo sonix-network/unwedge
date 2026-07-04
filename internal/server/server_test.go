@@ -260,6 +260,7 @@ func TestGetStatus(t *testing.T) {
 	client := startTestServer(t, Deps{
 		Version: "v1.2.3", Console: con, Power: power.NewFake(power.StateOn), Store: store,
 		SerialDevice: "/dev/ttyUSB0", SerialBaud: 115200,
+		SSHTarget: "10.0.0.5", SSHUser: "root", PowerOutlet: 3,
 	})
 	resp, err := client.GetStatus(context.Background(), &unwedgev1.GetStatusRequest{})
 	if err != nil {
@@ -270,6 +271,9 @@ func TestGetStatus(t *testing.T) {
 	}
 	if resp.PowerState != unwedgev1.PowerState_POWER_STATE_ON {
 		t.Fatalf("power state = %v", resp.PowerState)
+	}
+	if resp.SshTarget != "10.0.0.5" || resp.SshUser != "root" || resp.PowerOutlet != 3 {
+		t.Fatalf("ssh/outlet status = %+v", resp)
 	}
 }
 

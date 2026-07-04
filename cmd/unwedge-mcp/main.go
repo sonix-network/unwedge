@@ -122,7 +122,7 @@ func schema(props obj, required ...string) obj {
 func registerTools(srv *mcp.Server, cl *client.Client, owner string, wait time.Duration) {
 	srv.AddTool(mcp.Tool{
 		Name:        "get_status",
-		Description: "Get controller/target status: serial connection, power state, TFTP dir, and hardware-lock (session) state. Does not acquire the lock.",
+		Description: "Get controller/target status: serial connection, power state and outlet, SSH target, TFTP dir, and hardware-lock (session) state. Does not acquire the lock.",
 		InputSchema: schema(obj{}),
 		Handler: func(ctx context.Context, _ json.RawMessage) (string, error) {
 			s, err := cl.API.GetStatus(ctx, &unwedgev1.GetStatusRequest{})
@@ -134,10 +134,17 @@ func registerTools(srv *mcp.Server, cl *client.Client, owner string, wait time.D
 				lock = fmt.Sprintf("HELD by %q (expires in %s)", s.SessionOwner,
 					time.Until(time.UnixMilli(s.SessionExpiresAtUnixMs)).Round(time.Second))
 			}
-			return fmt.Sprintf("version=%s serial=%s@%d connected=%v power=%s tftp=%s dir=%s buffer=%dB lock=%s",
+			power := strings.TrimPrefix(s.PowerState.String(), "POWER_STATE_")
+			if s.PowerOutlet > 0 {
+				power = fmt.Sprintf("%s(outlet%d)", power, s.PowerOutlet)
+			}
+			ssh := "(unconfigured)"
+			if s.SshTarget != "" {
+				ssh = fmt.Sprintf("%s@%s", s.SshUser, s.SshTarget)
+			}
+			return fmt.Sprintf("version=%s serial=%s@%d connected=%v power=%s ssh=%s tftp=%s dir=%s buffer=%dB lock=%s",
 				s.Version, s.SerialDevice, s.SerialBaud, s.SerialConnected,
-				strings.TrimPrefix(s.PowerState.String(), "POWER_STATE_"),
-				s.TftpAddress, s.TftpDir, s.ConsoleBufferBytes, lock), nil
+				power, ssh, s.TftpAddress, s.TftpDir, s.ConsoleBufferBytes, lock), nil
 		},
 	})
 

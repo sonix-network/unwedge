@@ -41,6 +41,9 @@ type Deps struct {
 	SerialDevice string
 	SerialBaud   uint32
 	TFTPAddress  string
+	SSHTarget    string // host or host:port the target is SSHed to ("" if unset)
+	SSHUser      string // username SSH authenticates as ("" if unset)
+	PowerOutlet  int32  // 1-based APC outlet, or 0 if power control is unconfigured
 }
 
 // Service implements unwedgev1.UnwedgeServer.
@@ -73,6 +76,9 @@ func (s *Service) GetStatus(ctx context.Context, _ *unwedgev1.GetStatusRequest) 
 		SerialDevice: s.deps.SerialDevice,
 		SerialBaud:   s.deps.SerialBaud,
 		TftpAddress:  s.deps.TFTPAddress,
+		SshTarget:    s.deps.SSHTarget,
+		SshUser:      s.deps.SSHUser,
+		PowerOutlet:  s.deps.PowerOutlet,
 	}
 	if s.deps.Console != nil {
 		resp.SerialConnected = s.deps.Console.Err() == nil
