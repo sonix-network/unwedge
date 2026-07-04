@@ -221,7 +221,9 @@ func registerTools(srv *mcp.Server, cl *client.Client, owner string, wait time.D
 	srv.AddTool(mcp.Tool{
 		Name: "wait_for_pattern",
 		Description: "Block until a regular expression (RE2) matches new console output, or the timeout elapses. " +
-			"Arm this before triggering the action that produces the expected output.",
+			"Arm this before triggering the action that produces the expected output. " +
+			"Keeps scanning through heavy output bursts (e.g. a target reboot), so it can bridge a reboot and " +
+			"catch a post-reboot boot marker.",
 		InputSchema: schema(obj{
 			"pattern":                  obj{"type": "string"},
 			"timeout_ms":               obj{"type": "integer"},
