@@ -40,21 +40,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # TEMPORARY diagnostic: dig/nslookup aren't installed on the worker, so
-      # use a stdlib raw DNS probe to query the controller name against the
-      # system resolvers (from /etc/resolv.conf) and public resolvers, printing
-      # the RCODE per server. The queried name is masked. Remove once understood.
-      - name: Diag - raw DNS probe on the worker (temporary)
-        if: always()
-        env:
-          UNWEDGE_ADDR: ${{ secrets.UNWEDGE_ADDR }}
-        run: |
-          set +e
-          echo "== /etc/resolv.conf (nameservers the worker uses) =="
-          grep -vE '^\s*#' /etc/resolv.conf 2>/dev/null
-          echo "== raw DNS probe =="
-          HOST="${UNWEDGE_ADDR%:*}" python3 "${GITHUB_WORKSPACE}/scripts/dnsprobe.py"
-
       - name: Download known-good vEdge 1000 image
         env:
           GH_TOKEN: ${{ github.token }}
