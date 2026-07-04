@@ -96,7 +96,11 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        go build -o "${RUNNER_TEMP}/unwedge" "${GITHUB_ACTION_PATH}/cmd/unwedge"
+        # Build from the action's own checkout: `go build` resolves the module
+        # from the working directory, which for an external `uses:` is the
+        # caller's repo (no go.mod), not this action. cd in first.
+        cd "${GITHUB_ACTION_PATH}"
+        go build -o "${RUNNER_TEMP}/unwedge" ./cmd/unwedge
 
     - name: Resolve image path
       id: img
