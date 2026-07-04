@@ -62,6 +62,22 @@ jobs:
           curl -fsSL -o "image/$(basename "$url")" "$url"
           ls -l image
 
+      # The self-hosted runner has HTTPS_PROXY set (the org's Squid), and
+      # gRPC-Go honors it — so it tries to reach the controller through Squid,
+      # which denies CONNECT to :7777. The controller is directly reachable on
+      # the runner's network, so bypass the proxy just for its host. Derived
+      # from the secret at runtime (stays masked); the image download above
+      # still goes through the proxy since this only applies to later steps.
+      - name: Bypass the HTTP proxy for the controller
+        env:
+          UNWEDGE_ADDR: ${{ secrets.UNWEDGE_ADDR }}
+        run: |
+          set -euo pipefail
+          host="${UNWEDGE_ADDR%:*}"   # strip a trailing :port if present
+          bypass="${UNWEDGE_ADDR},${host},localhost,127.0.0.1,::1"
+          echo "no_proxy=${bypass}" >> "$GITHUB_ENV"
+          echo "NO_PROXY=${bypass}" >> "$GITHUB_ENV"
+
       - name: Smoke test on real vEdge 1000
         id: smoke
         uses: ./
