@@ -40,34 +40,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # TEMPORARY diagnostic: query the controller name with dig on the worker,
-      # comparing the system resolver against public resolvers, to see why it
-      # resolves to zero addresses locally. The hostname is masked in output.
-      # Remove once understood.
-      - name: Diag - dig on the worker (temporary)
+      # TEMPORARY diagnostic: dig/nslookup aren't installed on the worker, so
+      # use a stdlib raw DNS probe to query the controller name against the
+      # system resolvers (from /etc/resolv.conf) and public resolvers, printing
+      # the RCODE per server. The queried name is masked. Remove once understood.
+      - name: Diag - raw DNS probe on the worker (temporary)
         if: always()
         env:
           UNWEDGE_ADDR: ${{ secrets.UNWEDGE_ADDR }}
         run: |
           set +e
-          host="${UNWEDGE_ADDR%:*}"                 # controller host, without :port
-          esc="${host//./\\.}"
-          mask() { sed -E "s/${esc}/<controller-host>/g"; }
-          if ! command -v dig >/dev/null 2>&1; then
-            echo "dig not installed; attempting install (dnsutils/bind-utils)..."
-            { sudo apt-get -qq update && sudo apt-get -qq install -y dnsutils; } >/dev/null 2>&1 \
-              || sudo dnf -q -y install bind-utils >/dev/null 2>&1 \
-              || sudo yum -q -y install bind-utils >/dev/null 2>&1
-          fi
-          echo "== /etc/resolv.conf (nameservers the worker uses) =="; cat /etc/resolv.conf 2>/dev/null | grep -vE '^\s*#'
-          if command -v dig >/dev/null 2>&1; then
-            echo "== dig AAAA via system resolver (status + SERVER) =="; dig AAAA "$host" | mask
-            echo "== dig A via system resolver (short) =="; dig +short A "$host" | mask
-            echo "== dig AAAA @2606:4700:4700::1111 (Cloudflare over IPv6) =="; dig +short AAAA "$host" @2606:4700:4700::1111 | mask
-            echo "== dig AAAA @2001:4860:4860::8888 (Google over IPv6) =="; dig +short AAAA "$host" @2001:4860:4860::8888 | mask
-          else
-            echo "dig unavailable; nslookup fallback:"; nslookup -query=AAAA "$host" 2>&1 | mask
-          fi
+          echo "== /etc/resolv.conf (nameservers the worker uses) =="
+          grep -vE '^\s*#' /etc/resolv.conf 2>/dev/null
+          echo "== raw DNS probe =="
+          HOST="${UNWEDGE_ADDR%:*}" python3 "${GITHUB_WORKSPACE}/scripts/dnsprobe.py"
 
       - name: Download known-good vEdge 1000 image
         env:
