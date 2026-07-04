@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/grpc"
+
 	unwedgev1 "github.com/sonix-network/unwedge/gen/unwedge/v1"
 	"github.com/sonix-network/unwedge/internal/client"
 )
@@ -43,6 +45,16 @@ type Config struct {
 	NetbootTimeout time.Duration
 	// VerifyCRC32 asks U-Boot to verify the loaded image before booting.
 	VerifyCRC32 bool
+	// SSHCommand, if set, is run on the target over SSH after a healthy boot to
+	// prove SSH connectivity. Its stdout is appended to the boot log. A common
+	// choice is "cat /etc/openwrt_release", which also confirms the version.
+	SSHCommand string
+	// SSHExpect, if set, is an RE2 pattern the SSHCommand stdout must match, so
+	// the test also asserts the expected image booted (e.g. the release string).
+	SSHExpect string
+	// SSHTimeout bounds retrying SSH after the boot marker, since dropbear and
+	// DHCP need a moment to come up. 0 -> 90s.
+	SSHTimeout time.Duration
 	// LiveOutput, if set, receives console bytes as they arrive (e.g. os.Stderr).
 	LiveOutput io.Writer
 	// Progress, if set, receives human-readable progress lines.
@@ -51,11 +63,12 @@ type Config struct {
 
 // Result is the outcome of a smoke run.
 type Result struct {
-	Success  bool
-	Reason   string // why it passed or failed
-	BootLog  []byte // full captured console log (the release artifact)
-	Uploaded *unwedgev1.UploadImageResponse
-	Duration time.Duration
+	Success   bool
+	Reason    string // why it passed or failed
+	BootLog   []byte // full captured console log (the release artifact)
+	SSHOutput string // stdout of SSHCommand, if one was run
+	Uploaded  *unwedgev1.UploadImageResponse
+	Duration  time.Duration
 }
 
 func (c *Config) progress(format string, args ...interface{}) {
@@ -134,7 +147,85 @@ func Run(ctx context.Context, cl *client.Client, cfg Config) (*Result, error) {
 	// 4. Watch the captured console for a success or failure marker.
 	success, reason := waitForMarker(ctx, cap, successRE, failureRE, bootTimeout)
 
-	return finish(cap, started, success, reason, up, capCancel, capDone), nil
+	// 5. Optionally prove SSH connectivity (and, via SSHExpect, that the right
+	//    image booted) once userspace is up. Only attempted on a healthy boot.
+	var sshOut string
+	if success && cfg.SSHCommand != "" {
+		sshOut, success, reason = checkSSH(ctx, cl.API, cfg, cap, reason)
+	}
+
+	res := finish(cap, started, success, reason, up, capCancel, capDone)
+	res.SSHOutput = sshOut
+	return res, nil
+}
+
+// sshRunner is the subset of the gRPC client checkSSH needs; it is satisfied by
+// *client.Client's API and is mockable in tests.
+type sshRunner interface {
+	SSHExec(ctx context.Context, in *unwedgev1.SSHExecRequest, opts ...grpc.CallOption) (*unwedgev1.SSHExecResponse, error)
+}
+
+// sshRetryInterval is how long to wait between SSH attempts; a var so tests can
+// shorten it.
+var sshRetryInterval = 3 * time.Second
+
+// checkSSH runs cfg.SSHCommand over SSH, retrying until it succeeds or
+// cfg.SSHTimeout elapses (dropbear/DHCP need a moment after the boot marker). It
+// appends the output to the capture buffer and returns the (possibly updated)
+// success/reason plus the command stdout.
+func checkSSH(ctx context.Context, api sshRunner, cfg Config, cap *captureBuf, reason string) (out string, ok bool, why string) {
+	timeout := cfg.SSHTimeout
+	if timeout == 0 {
+		timeout = 90 * time.Second
+	}
+	cfg.progress("boot healthy; verifying SSH: %s", cfg.SSHCommand)
+	resp, err := trySSH(ctx, api, cfg.SSHCommand, timeout)
+	if err != nil {
+		return "", false, "ssh check failed: " + err.Error()
+	}
+	out = string(resp.GetStdout())
+	cap.write([]byte(fmt.Sprintf("\n===== ssh: %s =====\n%s\n", cfg.SSHCommand, out)))
+	if cfg.SSHExpect != "" {
+		re, cerr := regexp.Compile(cfg.SSHExpect)
+		if cerr != nil {
+			return out, false, "bad ssh-expect pattern: " + cerr.Error()
+		}
+		if !re.MatchString(out) {
+			return out, false, fmt.Sprintf("ssh output did not match %q", cfg.SSHExpect)
+		}
+		return out, true, reason + fmt.Sprintf("; ssh ok (matched %q)", cfg.SSHExpect)
+	}
+	return out, true, reason + "; ssh ok"
+}
+
+// trySSH runs command over SSH, retrying on connection/exec failure until it
+// exits 0 or timeout elapses. It returns the last error if it never succeeds.
+func trySSH(ctx context.Context, api sshRunner, command string, timeout time.Duration) (*unwedgev1.SSHExecResponse, error) {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		resp, err := api.SSHExec(cctx, &unwedgev1.SSHExecRequest{Command: command, TimeoutMs: 30000})
+		cancel()
+		switch {
+		case err != nil:
+			lastErr = err
+		case resp.GetTimedOut():
+			lastErr = fmt.Errorf("ssh command timed out")
+		case resp.GetExitCode() != 0:
+			lastErr = fmt.Errorf("ssh command exited %d: %s", resp.GetExitCode(), string(resp.GetStderr()))
+		default:
+			return resp, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, lastErr
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(sshRetryInterval):
+		}
+	}
 }
 
 func finish(cap *captureBuf, started time.Time, ok bool, reason string, up *unwedgev1.UploadImageResponse, cancel context.CancelFunc, done <-chan error) *Result {

@@ -45,7 +45,7 @@ Commands:
   ssh <command>                run a command on the target over SSH
   ssh -W [host:port]           proxy raw SSH to the target (OpenSSH ProxyCommand)
   scp <src> <dst>              copy a file to/from the target (prefix its path ':')
-  smoke <image-file>           release smoke test: netboot + verify + boot log
+  smoke <image-file>           release smoke test: netboot + verify + boot log (+ optional SSH check)
 
 Global flags:`
 
@@ -73,6 +73,9 @@ func realMain() int {
 	keys := fs.String("keys", "", "comma-separated control keys for 'write' (e.g. ctrl-x,enter)")
 	out := fs.String("out", "", "output file for 'smoke' boot log (default stdout)")
 	kernelArgs := fs.String("kernel-args", "", "extra kernel args for netboot/smoke")
+	sshCommand := fs.String("ssh-command", "", "smoke: run this over SSH after a healthy boot to verify connectivity (e.g. 'cat /etc/openwrt_release')")
+	sshExpect := fs.String("ssh-expect", "", "smoke: regex the -ssh-command stdout must match (asserts the expected image booted)")
+	sshTimeout := fs.Duration("ssh-timeout", 90*time.Second, "smoke: how long to retry SSH after a healthy boot")
 	verify := fs.Bool("verify", false, "verify image CRC32 in U-Boot before booting")
 	powerCycle := fs.Bool("power-cycle", true, "power-cycle before netboot")
 	timeout := fs.Duration("timeout", 8*time.Minute, "overall timeout for the command")
@@ -129,6 +132,9 @@ func realMain() int {
 	subKeys := sub.String("keys", *keys, "comma-separated control keys for 'write' (e.g. ctrl-x,enter)")
 	subOut := sub.String("out", *out, "output file for 'smoke' boot log (default stdout)")
 	subKernelArgs := sub.String("kernel-args", *kernelArgs, "extra kernel args for netboot/smoke")
+	subSSHCommand := sub.String("ssh-command", *sshCommand, "smoke: run this over SSH after a healthy boot to verify connectivity")
+	subSSHExpect := sub.String("ssh-expect", *sshExpect, "smoke: regex the -ssh-command stdout must match")
+	subSSHTimeout := sub.Duration("ssh-timeout", *sshTimeout, "smoke: how long to retry SSH after a healthy boot")
 	subVerify := sub.Bool("verify", *verify, "verify image CRC32 in U-Boot before booting")
 	subPowerCycle := sub.Bool("power-cycle", *powerCycle, "power-cycle and stop at the U-Boot prompt before netboot/interrupt/uboot")
 	subTimeout := sub.Duration("timeout", *timeout, "overall timeout for the command")
@@ -140,7 +146,8 @@ func realMain() int {
 	opts := cmdOpts{
 		keys: *subKeys, out: *subOut, kernelArgs: *subKernelArgs,
 		verify: *subVerify, powerCycle: *subPowerCycle, timeout: *subTimeout,
-		proxy: *subProxy,
+		proxy:      *subProxy,
+		sshCommand: *subSSHCommand, sshExpect: *subSSHExpect, sshTimeout: *subSSHTimeout,
 	}
 
 	// Acquire the exclusive hardware lock for operational commands. Read-only
@@ -179,6 +186,9 @@ type cmdOpts struct {
 	powerCycle bool
 	timeout    time.Duration
 	proxy      bool
+	sshCommand string
+	sshExpect  string
+	sshTimeout time.Duration
 }
 
 func dispatch(ctx context.Context, cl *client.Client, cmd string, args []string, o cmdOpts) error {
@@ -482,11 +492,17 @@ func cmdSmoke(ctx context.Context, cl *client.Client, args []string, o cmdOpts) 
 		KernelArgs:  o.kernelArgs,
 		VerifyCRC32: o.verify,
 		BootTimeout: o.timeout,
+		SSHCommand:  o.sshCommand,
+		SSHExpect:   o.sshExpect,
+		SSHTimeout:  o.sshTimeout,
 		LiveOutput:  os.Stderr,
 		Progress:    func(s string) { fmt.Fprintln(os.Stderr, "smoke:", s) },
 	})
 	if err != nil {
 		return err
+	}
+	if res.SSHOutput != "" {
+		fmt.Fprintf(os.Stderr, "smoke: ssh %q output:\n%s\n", o.sshCommand, res.SSHOutput)
 	}
 	// Write the boot log artifact.
 	if o.out != "" {
