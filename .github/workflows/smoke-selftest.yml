@@ -40,6 +40,26 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # TEMPORARY diagnostic: does the worker have global IPv6 + a route to the
+      # controller, and what does its resolver return for the (AAAA-only)
+      # controller host? Explains the no_proxy "produced zero addresses"
+      # failure. Remove once understood.
+      - name: Diag - worker IPv6 and DNS (temporary)
+        if: always()
+        env:
+          UNWEDGE_ADDR: ${{ secrets.UNWEDGE_ADDR }}
+        run: |
+          set +e
+          echo "== global IPv6 addresses =="; ip -6 addr show scope global
+          echo "== IPv6 default route =="; ip -6 route show default
+          echo "== route to controller (2a0a:d980:1981:108::1) =="; ip -6 route get 2a0a:d980:1981:108::1
+          echo "== reach controller over IPv6 =="; (ping -6 -c1 -W2 2a0a:d980:1981:108::1 || ping6 -c1 -W2 2a0a:d980:1981:108::1) 2>&1 | tail -3
+          echo "== proxy env (names only) =="; env | grep -iE 'proxy' | sed -E 's/=.*/=<set>/'
+          host="${UNWEDGE_ADDR%:*}"   # controller host, without :port (not printed)
+          echo "== worker resolver output for the controller host (addresses only) =="
+          echo "  ahosts   (default family): $(getent ahosts   "$host" | awk '{print $1}' | sort -u | paste -sd, -)"
+          echo "  ahostsv6 (force v6):       $(getent ahostsv6 "$host" | awk '{print $1}' | sort -u | paste -sd, -)"
+
       - name: Download known-good vEdge 1000 image
         env:
           GH_TOKEN: ${{ github.token }}
