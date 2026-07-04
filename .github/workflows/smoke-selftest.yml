@@ -77,6 +77,11 @@ jobs:
           ca: ${{ secrets.UNWEDGE_CA }}
           cert: ${{ secrets.UNWEDGE_CLIENT_CERT }}
           key: ${{ secrets.UNWEDGE_CLIENT_KEY }}
+          # Also exercise the post-boot SSH check against the known-good image.
+          # The pinned openwrt release is v2026-07-04.233, so /etc/openwrt_release
+          # should carry SONIX-2026-07-04.233.
+          ssh-command: cat /etc/openwrt_release
+          ssh-expect: SONIX-2026-07-04\.233
 
       # Prove the action produced good artifacts, not just a zero exit: the
       # result output is PASS, and the boot log exists and shows a healthy boot.
