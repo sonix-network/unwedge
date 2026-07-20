@@ -81,6 +81,10 @@ type TFTPConfig struct {
 	Dir     string `yaml:"dir"`     // image directory
 	Address string `yaml:"address"` // UDP listen address, e.g. ":69"
 	Enabled *bool  `yaml:"enabled"` // default true
+	// MaxAge is how long an uploaded image is kept before a background reaper
+	// deletes it, so the shared image directory doesn't grow unbounded across
+	// sessions. Default 6h; set to 0 to disable automatic cleanup.
+	MaxAge time.Duration `yaml:"max_age"`
 }
 
 // SSHConfig configures SSH access to the running target.
@@ -139,6 +143,7 @@ func Default() Config {
 			Dir:     "/var/lib/unwedge/images",
 			Address: ":69",
 			Enabled: &trueVal,
+			MaxAge:  6 * time.Hour,
 		},
 		SSH: SSHConfig{
 			User:        "root",

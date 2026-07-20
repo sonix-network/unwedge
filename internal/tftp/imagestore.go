@@ -190,6 +190,50 @@ func (s *Store) crc32Physical(physBase string) (uint32, error) {
 	return cr.Sum32(), nil
 }
 
+// Prune deletes every file in the image directory whose modification time is
+// older than maxAge, returning the on-disk basenames it removed. It sweeps the
+// whole directory regardless of namespace prefix, so a single call on the raw
+// store reclaims stale images left by any instance as well as abandoned
+// ".upload-*" temp files from crashed uploads. A non-positive maxAge disables
+// pruning (Prune returns nil immediately). Individual remove failures are
+// collected into the returned error but do not stop the sweep; a file that
+// vanishes mid-sweep (raced with another remover) is not an error.
+func (s *Store) Prune(maxAge time.Duration) ([]string, error) {
+	if maxAge <= 0 {
+		return nil, nil
+	}
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return nil, fmt.Errorf("tftp: read image dir: %w", err)
+	}
+	cutoff := time.Now().Add(-maxAge)
+	var removed []string
+	var firstErr error
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		fi, err := e.Info()
+		if err != nil {
+			continue // vanished between ReadDir and stat; nothing to prune
+		}
+		if fi.ModTime().After(cutoff) {
+			continue
+		}
+		if err := os.Remove(filepath.Join(s.dir, e.Name())); err != nil {
+			if os.IsNotExist(err) {
+				continue // already gone; fine
+			}
+			if firstErr == nil {
+				firstErr = fmt.Errorf("tftp: prune %s: %w", e.Name(), err)
+			}
+			continue
+		}
+		removed = append(removed, e.Name())
+	}
+	return removed, firstErr
+}
+
 // Delete removes an image.
 func (s *Store) Delete(name string) error {
 	path, err := s.Path(name)

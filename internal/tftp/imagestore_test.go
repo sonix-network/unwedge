@@ -3,8 +3,11 @@ package tftp
 import (
 	"bytes"
 	"hash/crc32"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestStoreSaveListDelete(t *testing.T) {
@@ -138,6 +141,56 @@ func TestUnnamespacedStoreIsLegacyLayout(t *testing.T) {
 	// The raw store must find it at the bare name (what U-Boot requested pre-upgrade).
 	if _, err := raw.Path("kernel.bin"); err != nil {
 		t.Fatalf("raw.Path: %v", err)
+	}
+}
+
+// TestStorePrune verifies that Prune deletes only files older than maxAge,
+// leaves fresh ones, reaps across namespaces plus abandoned temp files, and is
+// disabled by a non-positive maxAge.
+func TestStorePrune(t *testing.T) {
+	dir := t.TempDir()
+	raw, _ := NewStore(dir)
+
+	// A fresh image (kept) and, via a namespaced view, a second one we backdate.
+	if _, err := raw.Save("fresh.bin", strings.NewReader("new"), false); err != nil {
+		t.Fatalf("Save fresh: %v", err)
+	}
+	if _, err := raw.Namespaced("dut1").Save("old.bin", strings.NewReader("old"), false); err != nil {
+		t.Fatalf("Save old: %v", err)
+	}
+	// An abandoned in-progress upload temp file, also stale.
+	stale := filepath.Join(dir, ".upload-abandoned")
+	if err := os.WriteFile(stale, []byte("junk"), 0o644); err != nil {
+		t.Fatalf("write temp: %v", err)
+	}
+
+	old := time.Now().Add(-24 * time.Hour)
+	for _, p := range []string{filepath.Join(dir, "dut1--old.bin"), stale} {
+		if err := os.Chtimes(p, old, old); err != nil {
+			t.Fatalf("chtimes %s: %v", p, err)
+		}
+	}
+
+	// A non-positive maxAge disables pruning entirely.
+	if removed, err := raw.Prune(0); err != nil || removed != nil {
+		t.Fatalf("Prune(0) = %v, %v; want nil, nil", removed, err)
+	}
+
+	removed, err := raw.Prune(time.Hour)
+	if err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+	if len(removed) != 2 {
+		t.Fatalf("removed %v, want the 2 stale files", removed)
+	}
+
+	// Only the fresh image survives.
+	list, _ := raw.List()
+	if len(list) != 1 || list[0].Name != "fresh.bin" {
+		t.Fatalf("after prune List = %+v, want just fresh.bin", list)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale temp file survived prune: %v", err)
 	}
 }
 

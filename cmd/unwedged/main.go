@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"google.golang.org/grpc"
 
@@ -133,6 +134,14 @@ func run() error {
 			return fmt.Errorf("image store: %w", err)
 		}
 		store = rawStore.Namespaced(cfg.Name)
+		// Reap stale images so the shared directory doesn't grow without bound.
+		// The sweep runs on the raw store (all instances' files) and is idempotent,
+		// so it is safe even when several instances share the directory.
+		if cfg.TFTP.MaxAge > 0 {
+			stopReaper := startImageReaper(rawStore, cfg.TFTP.MaxAge, logger)
+			defer stopReaper()
+			logger.Info("image reaper enabled", "max_age", cfg.TFTP.MaxAge)
+		}
 		if cfg.TFTPEnabled() {
 			tftpSrv = tftp.NewServer(rawStore, cfg.TFTP.Address, logger)
 			go func() {
@@ -233,4 +242,43 @@ func run() error {
 	case err := <-serveErr:
 		return err
 	}
+}
+
+// startImageReaper runs a background loop that periodically deletes images
+// older than maxAge, keeping the shared image directory from growing without
+// bound across sessions. It sweeps once at startup and then on a ticker whose
+// cadence tracks maxAge (bounded to [1m, 1h]). The returned function stops the
+// loop and is safe to call once at shutdown.
+func startImageReaper(store *tftp.Store, maxAge time.Duration, logger *slog.Logger) func() {
+	interval := maxAge / 6
+	if interval < time.Minute {
+		interval = time.Minute
+	}
+	if interval > time.Hour {
+		interval = time.Hour
+	}
+	done := make(chan struct{})
+	sweep := func() {
+		removed, err := store.Prune(maxAge)
+		if err != nil {
+			logger.Warn("image reaper error", "err", err)
+		}
+		if len(removed) > 0 {
+			logger.Info("image reaper removed stale images", "count", len(removed), "files", removed)
+		}
+	}
+	go func() {
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		sweep() // reclaim anything already stale at startup
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+				sweep()
+			}
+		}
+	}()
+	return func() { close(done) }
 }
